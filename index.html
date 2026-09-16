@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <meta name="description" content="Interactive 3D human eye anatomy explorer for medical education." />
+  <title>Eye Anatomy Explorer</title>
+  <link rel="stylesheet" href="./style.css" />
+</head>
+<body>
+  <div id="app">
+    <header class="topbar">
+      <div class="brand">
+        <div class="brand-mark">◉</div>
+        <div>
+          <strong>Eye Anatomy Explorer</strong>
+          <span>Interactive medical visualization</span>
+        </div>
+      </div>
+      <div class="toolbar">
+        <label class="search">
+          <span>⌕</span>
+          <input id="searchInput" autocomplete="off" placeholder="Search anatomy…" />
+        </label>
+        <div class="view-buttons">
+          <button data-view="anterior">Anterior</button>
+          <button data-view="lateral">Lateral</button>
+          <button data-view="posterior">Posterior</button>
+          <button data-view="section">Cross Section</button>
+        </div>
+        <button id="resetBtn">Reset</button>
+        <button id="autoRotateBtn">Auto Rotate</button>
+        <button id="sectionBtn">Section Mode</button>
+        <button id="layersBtn">Layers</button>
+        <button id="captureBtn">Capture</button>
+        <button id="shareBtn">Share</button>
+      </div>
+    </header>
+
+    <main class="workspace">
+      <aside id="anatomySidebar" class="sidebar left-panel">
+        <div class="panel-head">
+          <div>
+            <span class="eyebrow">ANATOMY</span>
+            <h2>Structures</h2>
+          </div>
+          <button class="mobile-close" data-close="anatomySidebar">×</button>
+        </div>
+        <div id="anatomyList" class="anatomy-list"></div>
+      </aside>
+
+      <section class="viewport-wrap">
+        <canvas id="scene"></canvas>
+        <div class="viewport-hud">
+          <div class="hint" id="demoHint">Click any structure to explore.</div>
+          <div class="legend">
+            <span><i class="dot"></i> Selectable anatomy</span>
+            <span id="modeLabel">FULL EYE</span>
+          </div>
+        </div>
+        <div id="loading" class="loading">
+          <div class="spinner"></div>
+          <span>Building anatomy…</span>
+        </div>
+      </section>
+
+      <aside id="infoPanel" class="sidebar right-panel">
+        <div class="panel-head">
+          <div>
+            <span class="eyebrow">SELECTED STRUCTURE</span>
+            <h2 id="infoName">Cornea</h2>
+          </div>
+          <button class="mobile-close" data-close="infoPanel">×</button>
+        </div>
+
+        <div id="infoContent" class="info-content"></div>
+
+        <div class="notes-card">
+          <div class="card-title">
+            <span>PERSONAL NOTES</span>
+            <button id="allNotesBtn" class="text-button">All My Notes</button>
+          </div>
+          <textarea id="noteInput" placeholder="Type your notes here…"></textarea>
+          <div class="note-actions">
+            <button id="saveNoteBtn" class="primary">Save Note</button>
+            <button id="deleteNoteBtn" class="danger">Delete</button>
+          </div>
+        </div>
+      </aside>
+    </main>
+
+    <div id="layersPanel" class="floating-panel hidden">
+      <div class="floating-head">
+        <div>
+          <span class="eyebrow">LAYERS</span>
+          <h3>Visibility & opacity</h3>
+        </div>
+        <button id="closeLayers">×</button>
+      </div>
+      <div id="layerList"></div>
+    </div>
+
+    <div id="notesPanel" class="floating-panel hidden notes-list-panel">
+      <div class="floating-head">
+        <div>
+          <span class="eyebrow">MY NOTES</span>
+          <h3>Saved anatomy notes</h3>
+        </div>
+        <button id="closeNotes">×</button>
+      </div>
+      <div id="savedNotesList"></div>
+    </div>
+
+    <div id="toast" role="status"></div>
+
+    <footer>
+      Educational anatomical visualization. Not a substitute for professional medical advice.
+    </footer>
+  </div>
+
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/"
+      }
+    }
+  </script>
+  <script type="module" src="./app.js"></script>
+</body>
+</html>
