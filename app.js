@@ -63,6 +63,8 @@ function addMesh(id, geometry, material, position=[0,0,0], rotation=[0,0,0], par
   parent.add(mesh);
   if (!anatomyMeshes.has(id)) anatomyMeshes.set(id, []);
   anatomyMeshes.get(id).push(mesh);
+  material.userData = material.userData || {};
+  if (material.userData.baseOpacity == null) material.userData.baseOpacity = material.opacity;
   originalMaterials.set(mesh, material);
   return mesh;
 }
@@ -299,7 +301,18 @@ function applySection(on){
   renderer.localClippingEnabled=on;
   for(const meshes of anatomyMeshes.values()){
     meshes.forEach(m=>{
+      const base=m.material.userData?.baseOpacity ?? m.material.opacity;
       m.material.clippingPlanes=on?[clipPlane]:[];
+      if(on){
+        if(m.userData.anatomyId === "sclera") m.material.opacity=Math.min(base,.16);
+        else if(m.userData.anatomyId === "cornea") m.material.opacity=Math.min(base,.20);
+        else if(m.userData.anatomyId === "conjunctiva") m.material.opacity=Math.min(base,.18);
+        else if(m.userData.anatomyId === "vitreous") m.material.opacity=Math.min(base,.025);
+      } else {
+        m.material.opacity=base;
+      }
+      m.material.transparent = m.material.opacity < .995 || m.material.transparent;
+      m.material.depthWrite = m.material.opacity > .45;
       m.material.needsUpdate=true;
     });
   }
@@ -411,7 +424,7 @@ function pick(e){
   }
 }
 
-document.querySelectorAll("[data-view]").forEach(b=>b.onclick=()=>setView(b.dataset.view));
+document.querySelectorAll("[data-view]").forEach(b=>b.onclick=()=>{setView(b.dataset.view);document.querySelectorAll("[data-view]").forEach(x=>x.classList.toggle("active",x===b));});
 document.querySelector("#resetBtn").onclick=resetView;
 document.querySelector("#autoRotateBtn").onclick=()=>{
   autoRotate=!autoRotate;controls.autoRotate=autoRotate;
@@ -422,6 +435,16 @@ document.querySelector("#layersBtn").onclick=()=>document.querySelector("#layers
 document.querySelector("#closeLayers").onclick=()=>document.querySelector("#layersPanel").classList.add("hidden");
 document.querySelector("#captureBtn").onclick=capture;
 document.querySelector("#shareBtn").onclick=share;
+document.querySelector("#isolateBtn")?.addEventListener("click",isolate);
+document.querySelector("#showAllBtn")?.addEventListener("click",showAll);
+document.querySelector("#xrayBtn")?.addEventListener("click",()=>{
+  const x=document.querySelector("#xrayBtn");
+  const on=x.dataset.on!=="1"; x.dataset.on=on?"1":"0";
+  anatomyMeshes.forEach((meshes,id)=>meshes.forEach(m=>{
+    if(id!==selectedId){const base=m.material.userData?.baseOpacity ?? m.material.opacity; setMaterialState(m,on?Math.min(base,.12):base,true);}
+  }));
+  x.classList.toggle("active",on); toast(on?"X-Ray mode enabled.":"X-Ray mode disabled.");
+});
 document.querySelector("#saveNoteBtn").onclick=saveNote;
 document.querySelector("#deleteNoteBtn").onclick=deleteNote;
 document.querySelector("#allNotesBtn").onclick=()=>{renderNotes();document.querySelector("#notesPanel").classList.remove("hidden")};
@@ -456,5 +479,5 @@ function animate(){
 buildEye();addLights();buildSidebar();buildLayers();renderInfo();renderNotes();resize();animate();
 document.querySelector("#loading").remove();
 const restored=restoreState();
-if(!restored)selectStructure("cornea",false);
+if(!restored){ setView("section"); selectStructure("canalSchlemm",false); document.querySelectorAll("[data-view]").forEach(x=>x.classList.toggle("active",x.dataset.view==="section")); }
 setTimeout(()=>{autoRotate=true;controls.autoRotate=true;setTimeout(()=>{autoRotate=false;controls.autoRotate=false},3000)},250);
