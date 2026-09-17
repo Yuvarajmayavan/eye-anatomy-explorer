@@ -16,13 +16,12 @@ const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&
 // ------------------------------------------------------------------ renderer
 const canvas = $("#scene");
 const stage = $("#stage");
-const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true, preserveDrawingBuffer: true });
-renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+const COARSE = matchMedia("(pointer: coarse)").matches;
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true, preserveDrawingBuffer: true, powerPreference: "high-performance" });
+renderer.setPixelRatio(Math.min(devicePixelRatio, COARSE ? 1.5 : 2));
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.05;
-renderer.shadowMap.enabled = true;
-renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMappingExposure = 1.18;
 renderer.setClearColor(0x000000, 0);
 
 const scene = new THREE.Scene();
@@ -39,15 +38,10 @@ controls.maxDistance = 14;
 controls.autoRotateSpeed = 0.9;
 
 // lights: warm key, cool rim, soft fill
-const hemi = new THREE.HemisphereLight(0xcfe6ff, 0x1a0f18, 0.55);
-const key = new THREE.DirectionalLight(0xfff3e8, 2.4);
+const hemi = new THREE.HemisphereLight(0xcfe6ff, 0x12060c, 0.35);
+const key = new THREE.DirectionalLight(0xfff3e8, 3.0);
 key.position.set(4, 6, 6);
-key.castShadow = true;
-key.shadow.mapSize.set(1024, 1024);
-key.shadow.camera.left = key.shadow.camera.bottom = -4;
-key.shadow.camera.right = key.shadow.camera.top = 4;
-key.shadow.bias = -0.0005;
-const rim = new THREE.DirectionalLight(0x5fb4ff, 2.2);
+const rim = new THREE.DirectionalLight(0x5fb4ff, 3.0);
 rim.position.set(-5, 3, -4);
 const fill = new THREE.PointLight(0x8fc2ff, 14, 20, 2);
 fill.position.set(5, -1, 1);
@@ -73,13 +67,56 @@ for (const [id, objs] of Object.entries(registry)) {
     base.set(o, { opacity: m.opacity, transparent: m.transparent, depthWrite: m.depthWrite, emissive: m.emissive?.clone(), ei: m.emissiveIntensity ?? 0, visible: o.visible });
   }
 }
+// ---- selection highlight: pulsing see-through glow drawn on top of everything
+const HL = { uTime: { value: 0 }, uColor: { value: new THREE.Color(0x19b4ff) } };
+const hlMat = new THREE.ShaderMaterial({
+  uniforms: HL,
+  vertexShader: `varying vec3 vN; varying vec3 vV;
+    void main(){
+      vec4 p = vec4(position, 1.0);
+      vec3 n = normal;
+      #ifdef USE_INSTANCING
+        p = instanceMatrix * p; n = mat3(instanceMatrix) * n;
+      #endif
+      vec4 mv = modelViewMatrix * p;
+      vN = normalize(normalMatrix * n); vV = normalize(-mv.xyz);
+      gl_Position = projectionMatrix * mv;
+    }`,
+  fragmentShader: `uniform vec3 uColor; uniform float uTime; varying vec3 vN; varying vec3 vV;
+    void main(){
+      float rim = pow(1.0 - abs(dot(normalize(vN), normalize(vV))), 1.6);
+      float pulse = 0.6 + 0.4 * sin(uTime * 4.0);
+      vec3 c = mix(uColor * 0.9, vec3(0.75, 0.95, 1.0), rim * 0.6);
+      gl_FragColor = vec4(c, clamp(0.22 + 0.2 * pulse + rim * (0.55 + 0.3 * pulse), 0.0, 0.92));
+    }`,
+  transparent: true, depthTest: false, depthWrite: false, blending: THREE.NormalBlending, side: THREE.DoubleSide,
+});
+const overlays = {};
+for (const [id, objs] of Object.entries(registry)) {
+  overlays[id] = objs.filter((o) => o.isMesh && o.geometry?.attributes.normal).map((o) => {
+    const ov = o.isInstancedMesh ? new THREE.InstancedMesh(o.geometry, hlMat, o.count) : new THREE.Mesh(o.geometry, hlMat);
+    if (o.isInstancedMesh) { ov.instanceMatrix = o.instanceMatrix; ov.count = o.count; }
+    ov.renderOrder = 999; ov.visible = false; ov.raycast = () => {};
+    o.add(ov);
+    return ov;
+  });
+}
+function applyHighlight() {
+  for (const [id, list] of Object.entries(overlays)) {
+    const on = id === state.selected && !state.hidden.has(id);
+    list.forEach((ov) => { ov.visible = on; });
+  }
+}
 const LOW_PRIORITY = new Set(["anteriorChamber", "posteriorChamber", "vitreous", "conjunctiva"]);
 const worldAnchor = (id) => eye.localToWorld((ANCHORS[id] || new THREE.Vector3()).clone());
 
 // ------------------------------------------------------------------ state
 const state = { selected: "schlemm", hidden: new Set(), isolate: false, xray: false, tool: "select", view: "lateral", labels: true, tab: "overview", list: "anatomy" };
 
-function applyMaterials(t = 0) {
+let matsDirty = true, dirty = true, lastFrame = 0;
+const refresh = () => { matsDirty = true; dirty = true; };
+function applyMaterials() {
+  applyHighlight();
   for (const [id, objs] of Object.entries(registry)) {
     const sel = id === state.selected;
     for (const o of objs) {
@@ -92,10 +129,7 @@ function applyMaterials(t = 0) {
       m.transparent = b.transparent || faded;
       m.opacity = op;
       m.depthWrite = faded ? false : b.depthWrite;
-      if (m.emissive) {
-        if (sel) { m.emissive.set(0x2f8cff); m.emissiveIntensity = 0.35 + 0.25 * Math.sin(t * 3.2); }
-        else { m.emissive.copy(b.emissive); m.emissiveIntensity = b.ei; }
-      }
+      if (m.emissive) { m.emissive.copy(b.emissive); m.emissiveIntensity = b.ei; }
     }
   }
 }
@@ -107,7 +141,7 @@ const PRESETS = {
   lateral: () => ({ pos: V(7.5, 1.9, 3.7), target: V(0.15, -0.38, 0) }),
   anterior: () => ({ pos: V(0.3, 0.1, 7.6), target: V(-0.35, -0.5, 0) }),
   posterior: () => ({ pos: V(3.4, 1.6, -6.4), target: V(0, -0.5, -0.6) }),
-  section: () => ({ pos: V(7.7, 3.7, 0.5), target: V(0.1, -0.55, 0) }),
+  section: () => ({ pos: V(8.6, 4.2, 0.6), target: V(0.1, -0.25, 0) }),
   cornea: () => ({ pos: V(2.1, 0.7, 4.2), target: tgt(0, 1.05, 0) }),
   lens: () => ({ pos: V(3.0, 1.9, 1.9), target: tgt(0, 0.72, 0) }),
   retina: () => ({ pos: V(3.3, 2.4, -0.6), target: tgt(0.2, -0.6, 0.4) }),
@@ -145,10 +179,18 @@ function tagFor(id) {
   return tagEls[id];
 }
 const tmp = new THREE.Vector3();
+const layout = { w: 1, h: 1, cr: { left: 0, top: 0, width: 1, height: 1 }, sr: { left: 0, top: 0 } };
+function measure() {
+  layout.w = stage.clientWidth; layout.h = stage.clientHeight;
+  layout.cr = canvas.getBoundingClientRect(); layout.sr = stage.getBoundingClientRect();
+  layout.bottomUI = (stage.querySelector(".stage-bottom")?.offsetHeight || 0) + 16;
+  Object.values(tagEls).forEach((el) => { el._w = 0; });
+}
 function updateLabels() {
-  const w = stage.clientWidth, h = stage.clientHeight;
-  const cr = canvas.getBoundingClientRect(), sr = stage.getBoundingClientRect();
-  const ids = new Set(state.labels ? (LABEL_SET[state.view] || LABEL_SET.lateral) : []);
+  const { w, h, cr, sr } = layout;
+  let base = state.labels ? (LABEL_SET[state.view] || LABEL_SET.lateral) : [];
+  if (layout.w < 600) base = base.slice(0, 4);
+  const ids = new Set(base);
   if (state.labels && state.selected) ids.add(state.selected);
   let svg = "";
   const placed = [];
@@ -163,19 +205,23 @@ function updateLabels() {
     const s = Math.min(w, h * 1.3);
     const el = tagFor(id);
     const hot = id === state.selected;
-    el.classList.toggle("hot", hot);
-    const bw = el.offsetWidth, bh = el.offsetHeight;
+    if (el._hot !== hot || !el._w) { el.classList.toggle("hot", hot); el._hot = hot; el._w = el.offsetWidth; el._h = el.offsetHeight; }
+    const bw = el._w, bh = el._h;
     let lx = ax + ox * s, ly = ay + oy * s;
     lx = Math.max(bw / 2 + 4, Math.min(w - bw / 2 - 4, lx));
-    ly = Math.max(bh / 2 + (h < 700 ? 50 : 78), Math.min(h - (h < 700 ? 80 : h < 900 ? 130 : 310), ly));
-    for (let n = 0; n < 8; n++) {
-      const hit = placed.find((r) => Math.abs(r.x - lx) < (r.w + bw) / 2 + 6 && Math.abs(r.y - ly) < (r.h + bh) / 2 + 4);
-      if (!hit) break;
-      ly = hit.y + (ly >= hit.y ? 1 : -1) * ((hit.h + bh) / 2 + 6);
+    ly = Math.max(bh / 2 + (h < 700 ? 50 : 78), Math.min(h - layout.bottomUI - bh / 2, ly));
+    // resolve overlaps: try nearest free slot above/below, alternating
+    const free = (y) => !placed.some((r) => Math.abs(r.x - lx) < (r.w + bw) / 2 + 8 && Math.abs(r.y - y) < (r.h + bh) / 2 + 5);
+    if (!free(ly)) {
+      const step = bh + 8, y0 = ly;
+      for (let n = 1; n < 12; n++) {
+        if (free(y0 - n * step) && y0 - n * step > bh) { ly = y0 - n * step; break; }
+        if (free(y0 + n * step) && y0 + n * step < h - bh) { ly = y0 + n * step; break; }
+      }
     }
     placed.push({ x: lx, y: ly, w: bw, h: bh });
     el.style.transform = `translate(${lx - bw / 2}px, ${ly - bh / 2}px)`;
-    el.style.opacity = 1; el.style.pointerEvents = "auto";
+    if (el.style.opacity !== "1") { el.style.opacity = 1; el.style.pointerEvents = "auto"; }
     const ex = lx + (ax < lx ? -bw / 2 : bw / 2) * (Math.abs(ax - lx) > bw / 2 ? 1 : 0);
     const ey = Math.abs(ax - lx) > bw / 2 ? ly : ly + (ay < ly ? -bh / 2 : bh / 2);
     const mx = ax + (ex - ax) * 0.15, my = ey;
@@ -255,16 +301,19 @@ $$("[data-tab]").forEach((b) => b.addEventListener("click", () => {
   $$("[data-tab]").forEach((x) => x.classList.toggle("active", x === b));
   renderInfo();
 }));
-$("#closeInfo").addEventListener("click", () => $("#rightPanel").classList.remove("open"));
+$("#closeInfo").addEventListener("click", (e) => { e.stopPropagation(); $("#rightPanel").classList.remove("open", "expanded"); });
+// mobile: tap the panel header to expand / collapse the bottom sheet
+$(".info-head").addEventListener("click", () => { if (innerWidth <= 760) $("#rightPanel").classList.toggle("expanded"); });
 
 // ------------------------------------------------------------------ selection
 function select(id, focus = false) {
   if (!ANATOMY[id]) return;
   state.selected = id;
+  refresh();
   renderList(); renderInfo(); writeHash();
   $(`.item[data-id="${id}"]`)?.scrollIntoView({ block: "nearest", behavior: "smooth" });
   if (focus && FOCUS[id]) { setView(FOCUS[id] in LABEL_SET ? FOCUS[id] : state.view, FOCUS[id]); }
-  if (innerWidth <= 1100) $("#rightPanel").classList.add("open");
+  if (innerWidth <= 1100) { $("#rightPanel").classList.add("open"); if (innerWidth <= 760) $("#rightPanel").classList.remove("expanded"); }
 }
 const ray = new THREE.Raycaster();
 const ndc = new THREE.Vector2();
@@ -292,7 +341,7 @@ $$("[data-view]").forEach((b) => b.addEventListener("click", () => setView(b.dat
 $("#resetBtn").addEventListener("click", () => {
   state.hidden.clear(); state.isolate = state.xray = false;
   $$("[data-tool]").forEach((b) => b.classList.toggle("active", b.dataset.tool === "select"));
-  state.tool = "select"; applyTool(); setView("lateral"); toast("View reset");
+  state.tool = "select"; applyTool(); refresh(); setView("lateral"); toast("View reset");
 });
 let auto = false;
 function stopAuto() { if (auto) toggleAuto(); }
@@ -310,6 +359,7 @@ function applyTool() {
 }
 $$("[data-tool]").forEach((b) => b.addEventListener("click", () => {
   const t = b.dataset.tool;
+  refresh();
   if (t === "hide") { state.hidden.has(state.selected) ? state.hidden.delete(state.selected) : state.hidden.add(state.selected); b.classList.toggle("active", state.hidden.size > 0); toast(state.hidden.has(state.selected) ? `${ANATOMY[state.selected].name} hidden` : `${ANATOMY[state.selected].name} shown`); return; }
   if (t === "isolate") { state.isolate = !state.isolate; b.classList.toggle("active", state.isolate); if (state.isolate && FOCUS[state.selected]) flyTo(FOCUS[state.selected]); return; }
   if (t === "xray") { state.xray = !state.xray; b.classList.toggle("active", state.xray); return; }
@@ -319,7 +369,7 @@ $$("[data-tool]").forEach((b) => b.addEventListener("click", () => {
 }));
 $("#hideLabels").addEventListener("change", (e) => {
   state.labels = !e.target.checked;
-  labelsEl.classList.toggle("off", !state.labels); leadersEl.classList.toggle("off", !state.labels);
+  labelsEl.classList.toggle("off", !state.labels); leadersEl.classList.toggle("off", !state.labels); dirty = true;
 });
 
 // ------------------------------------------------------------------ top nav, dialogs, share
@@ -335,7 +385,8 @@ function quiz() {
   openModal("Quick Quiz", `<p>Which structure has this role?<br><b>“${esc(ANATOMY[ans].fn)}”</b></p>${opts.map((o) => `<button class="quiz-opt" data-q="${o}">${esc(ANATOMY[o].name)}</button>`).join("")}<div class="row"><button class="btn primary" id="nextQ">Next question</button></div>`);
   $("#modalBody").onclick = (e) => {
     const b = e.target.closest("[data-q]");
-    if (b) { $$(".quiz-opt").forEach((x) => x.classList.add(x.dataset.q === ans ? "ok" : x === b ? "bad" : "")); select(ans); }
+    if (b) { $$(".quiz-opt").forEach((x) => { x.disabled = true; if (x.dataset.q === ans) x.classList.add("ok"); else if (x === b) x.classList.add("bad"); });
+      toast(b.dataset.q === ans ? "Correct! 🎉" : `Answer: ${ANATOMY[ans].name}`); select(ans); }
     if (e.target.id === "nextQ") quiz();
   };
 }
@@ -382,8 +433,10 @@ function resize() {
   renderer.setSize(w, h, false);
   camera.aspect = w / h;
   camera.updateProjectionMatrix();
+  measure(); dirty = true;
 }
 new ResizeObserver(resize).observe(canvas);
+addEventListener("scroll", measure, { passive: true });
 
 function thumbnails() {
   const saveP = camera.position.clone(), saveT = controls.target.clone(), saveLabels = state.selected;
@@ -391,7 +444,7 @@ function thumbnails() {
   const ctx = off.getContext("2d");
   const html = QUICK.map(([name, preset]) => {
     setCamera(preset);
-    applyMaterials(0);
+    overlays[state.selected]?.forEach((ov) => { ov.visible = false; });
     renderer.render(scene, camera);
     const cw = canvas.width, ch = canvas.height, side = Math.min(cw, ch) * 0.8;
     ctx.fillStyle = "#07142b"; ctx.fillRect(0, 0, 180, 195);
@@ -401,6 +454,7 @@ function thumbnails() {
   $("#quickGrid").innerHTML = html;
   camera.position.copy(saveP); controls.target.copy(saveT); controls.update();
   state.selected = saveLabels;
+  matsDirty = true;
 }
 $("#quickGrid").addEventListener("click", (e) => {
   const q = e.target.closest(".qv"); if (!q) return;
@@ -410,18 +464,27 @@ $("#quickGrid").addEventListener("click", (e) => {
 
 const STILL = new URLSearchParams(location.search).has("still");
 const clock = new THREE.Clock();
+controls.addEventListener("change", () => { dirty = true; });
+document.addEventListener("visibilitychange", () => { if (!document.hidden) { dirty = true; requestAnimationFrame(loop); } });
 function loop() {
+  if (document.hidden) return;
   const t = clock.getElapsedTime();
   if (tween) {
+    dirty = true;
     const k = Math.min(1, (performance.now() - tween.t0) / tween.ms), e = 1 - Math.pow(1 - k, 3);
     camera.position.lerpVectors(tween.fromP, tween.toP, e);
     controls.target.lerpVectors(tween.fromT, tween.toT, e);
     if (k >= 1) tween = null;
   }
   controls.update();
-  applyMaterials(t);
-  renderer.render(scene, camera);
-  updateLabels();
+  if (matsDirty) { applyMaterials(); matsDirty = false; dirty = true; }
+  HL.uTime.value = t;
+  // glow pulse keeps animating at ~30fps when idle; full rate while interacting
+  if (dirty || t - lastFrame > 1 / 30) {
+    renderer.render(scene, camera);
+    if (dirty) updateLabels();
+    dirty = false; lastFrame = t;
+  }
   if (!STILL) requestAnimationFrame(loop);
 }
 
@@ -434,6 +497,8 @@ $$("[data-view]").forEach((b) => b.classList.toggle("active", b.dataset.view ===
 renderList();
 renderInfo();
 applyTool();
+measure();
 $("#loading").classList.add("done");
 loop();
 window.__eye = { scene, camera, controls, eye, select, setView, state };
+window.__eyeRender = () => { tween = null; if (matsDirty) { applyMaterials(); matsDirty = false; } HL.uTime.value = 0.4; renderer.render(scene, camera); updateLabels(); };
