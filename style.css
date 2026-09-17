@@ -247,3 +247,31 @@ dialog::backdrop { background: rgba(2, 6, 16, .6); -webkit-backdrop-filter: blur
   .tag.hot { font-size: 13px; padding: 6px 12px; }
 }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+
+/* ---------- short screens (laptops with browser bars) ---------- */
+@media (max-height: 820px) and (min-width: 761px) {
+  .app { grid-template-rows: 72px minmax(0, 1fr) 0; gap: 10px; }
+  .foot { display: none; }
+  .brand h1 { font-size: 21px; }
+  .logo { width: 44px; height: 44px; }
+  .nav-btn { height: 56px; }
+  .right { margin-top: 64px; max-height: calc(100% - 64px); }
+  .stage-top { top: 6px; }
+  .views button, .pill { padding: 8px 12px; font-size: 14px; }
+  .stage-bottom { flex-direction: row; justify-content: center; align-items: flex-end; gap: 10px; bottom: 6px; }
+  .toolbar { padding: 5px; gap: 2px; }
+  .toolbar button { width: 50px; height: 50px; font-size: 11px; gap: 3px; }
+  .toolbar .ico { width: 19px; height: 19px; }
+  .quick { width: auto; padding: 8px 10px; }
+  .quick-head { margin-bottom: 6px; }
+  .quick-head h2 { font-size: 13px; }
+  .switch { font-size: 12px; }
+  .quick-grid { grid-template-columns: repeat(6, 46px); gap: 6px; }
+  .qv { font-size: 10px; gap: 3px; }
+  .qv .thumb { aspect-ratio: 1; }
+}
+@media (max-height: 620px) and (min-width: 761px) {
+  .quick { display: none; }
+  .item { padding: 5px 8px; }
+  .orb { width: 26px; height: 26px; }
+}
