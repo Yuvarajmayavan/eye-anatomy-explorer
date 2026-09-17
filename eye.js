@@ -122,7 +122,7 @@ function buildTextures() {
     const cx = w / 2, R0 = w / 2;
     const g = c.createRadialGradient(cx, cx, R0 * 0.28, cx, cx, R0);
     g.addColorStop(0, "#c9a24a"); g.addColorStop(0.18, "#8a8a4a"); g.addColorStop(0.3, "#3d8fbf");
-    g.addColorStop(0.62, "#2f86c8"); g.addColorStop(0.9, "#1d5a92"); g.addColorStop(1, "#0b1f3a");
+    g.addColorStop(0.62, "#1f86d8"); g.addColorStop(0.9, "#12509a"); g.addColorStop(1, "#0b1f3a");
     c.fillStyle = g; c.fillRect(0, 0, w, w);
     for (let i = 0; i < 2600; i++) {
       const a = rnd() * TAU, r0 = R0 * rr(0.3, 0.5), r1 = R0 * rr(0.75, 0.99);
@@ -155,10 +155,10 @@ function buildTextures() {
   // Sclera: porcelain white, subtle pink, fine surface noise
   TEX.sclera = canvasTex(2048, 1024, (c, w, h) => {
     const g = c.createLinearGradient(0, 0, 0, h);
-    g.addColorStop(0, "#f7e2dc"); g.addColorStop(0.2, "#f6eeea"); g.addColorStop(0.7, "#efe4de"); g.addColorStop(1, "#e7cfc6");
+    g.addColorStop(0, "#f9e6e1"); g.addColorStop(0.2, "#fbf7f4"); g.addColorStop(0.7, "#f3ebe6"); g.addColorStop(1, "#e2c4ba");
     c.fillStyle = g; c.fillRect(0, 0, w, h);
     noise(c, w, h, 16000, ["rgba(210,160,150,.10)", "rgba(255,255,255,.25)", "rgba(190,120,110,.06)"], 3);
-    for (let i = 0; i < 60; i++) branch2D(c, rnd() * w, rr(40, h), rr(0, TAU), 40, 1.6, "rgba(200,70,70,.18)", 2);
+    for (let i = 0; i < 60; i++) branch2D(c, rnd() * w, rr(40, h), rr(0, TAU), 40, 1.8, "rgba(190,40,45,.32)", 2);
   });
   TEX.scleraCap = canvasTex(512, 512, (c, w, h) => {
     c.fillStyle = "#f3e9e3"; c.fillRect(0, 0, w, h);
@@ -167,7 +167,7 @@ function buildTextures() {
 
   // Choroid: deep red with dense vessel mesh
   TEX.choroid = canvasTex(2048, 1024, (c, w, h) => {
-    c.fillStyle = "#5c1116"; c.fillRect(0, 0, w, h);
+    c.fillStyle = "#3e0a0f"; c.fillRect(0, 0, w, h);
     for (let i = 0; i < 260; i++) branch2D(c, rnd() * w, rnd() * h, rr(0, TAU), 30, 4, `rgba(${200 + rnd() * 55},${40 + rnd() * 40},50,.75)`, 3);
     noise(c, w, h, 6000, ["rgba(30,0,5,.4)", "rgba(255,120,110,.15)"], 3);
   });
@@ -178,7 +178,7 @@ function buildTextures() {
   // Retina: warm orange fundus glow
   TEX.retina = canvasTex(2048, 1024, (c, w, h) => {
     const g = c.createLinearGradient(0, 0, 0, h);
-    g.addColorStop(0, "#9c2a14"); g.addColorStop(0.35, "#d24d22"); g.addColorStop(0.75, "#e86a2c"); g.addColorStop(1, "#c4451c");
+    g.addColorStop(0, "#7a1a0c"); g.addColorStop(0.35, "#c93d17"); g.addColorStop(0.75, "#f0701f"); g.addColorStop(1, "#b53a12");
     c.fillStyle = g; c.fillRect(0, 0, w, h);
     for (let i = 0; i < 160; i++) branch2D(c, rnd() * w, rnd() * h, rr(0, TAU), 26, 3, "rgba(150,30,20,.25)", 2);
     noise(c, w, h, 20000, ["rgba(255,170,90,.12)", "rgba(110,15,10,.16)"], 3);
@@ -304,7 +304,7 @@ export function buildEye(registry) {
   seed = 1337;
   const eye = new THREE.Group();
   const add = (id, obj, parent = eye) => {
-    obj.traverse(o => { if (o.isMesh || o.isLine || o.isPoints) { o.userData.anatomyId = id; (registry[id] ||= []).push(o); o.castShadow = o.isMesh; o.receiveShadow = o.isMesh; } });
+    obj.traverse(o => { if (o.isMesh || o.isLine || o.isPoints) { o.userData.anatomyId = id; (registry[id] ||= []).push(o); o.castShadow = false; o.receiveShadow = false; } });
     parent.add(obj);
     return obj;
   };
@@ -384,7 +384,7 @@ export function buildEye(registry) {
   const Rc = 0.846, yc = 0.434;
   const aC = Math.asin(0.58 / Rc) / DEG;
   const cornea = revolve([arc(Rc, 0.0001, aC, 40, yc), [[0.58, yc + Rc * Math.cos(aC * DEG)], [0.555, yc + 0.79 * Math.cos(Math.asin(0.555 / 0.79))]], arc(0.79, Math.asin(0.555 / 0.79) / DEG, 0.0001, 40, yc)], { phiStart: 0, phiLen: TAU, segs: 128, caps: false });
-  const corneaMat = new THREE.MeshPhysicalMaterial({ color: "#eaf8ff", transmission: 1, thickness: 0.12, ior: 1.376, roughness: 0.02, clearcoat: 1, clearcoatRoughness: 0.03, transparent: true, opacity: 1, envMapIntensity: 1.6, specularIntensity: 1, attenuationColor: new THREE.Color("#bfe8ff"), attenuationDistance: 3 });
+  const corneaMat = new THREE.MeshPhysicalMaterial({ color: "#dff4ff", roughness: 0.03, clearcoat: 1, clearcoatRoughness: 0.02, transparent: true, opacity: 0.16, depthWrite: false, envMapIntensity: 2.2, specularIntensity: 1, side: THREE.DoubleSide });
   add("cornea", mesh(cornea.side, corneaMat));
   add("cornea", mesh(cornea.side, fresnelMat("#9fdcff", 2.4, 0.9)));
   // limbal ring (grey-blue transition)
