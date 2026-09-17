@@ -3,62 +3,158 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
-  <meta name="description" content="Interactive 3D human eye anatomy explorer for medical education." />
+  <meta name="description" content="Interactive 3D human eye anatomy explorer for ophthalmic education." />
+  <meta name="theme-color" content="#050d1c" />
   <title>Eye Anatomy Explorer</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="./style.css" />
 </head>
 <body>
-<div id="app">
-  <header class="topbar">
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></symbol>
+    <symbol id="i-home" viewBox="0 0 24 24"><path d="M3 11 12 4l9 7"/><path d="M5 10v10h5v-6h4v6h5V10"/></symbol>
+    <symbol id="i-cap" viewBox="0 0 24 24"><path d="m2 9 10-5 10 5-10 5z"/><path d="M6 11v5c3 2.5 9 2.5 12 0v-5"/></symbol>
+    <symbol id="i-note" viewBox="0 0 24 24"><path d="M6 3h9l4 4v14H6z"/><path d="M9 11h7M9 15h7M9 7h4"/></symbol>
+    <symbol id="i-share" viewBox="0 0 24 24"><circle cx="18" cy="5" r="2.5"/><circle cx="6" cy="12" r="2.5"/><circle cx="18" cy="19" r="2.5"/><path d="m8.2 10.8 7.6-4.4M8.2 13.2l7.6 4.4"/></symbol>
+    <symbol id="i-more" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.3"/><circle cx="12" cy="12" r="1.3"/><circle cx="19" cy="12" r="1.3"/></symbol>
+    <symbol id="i-chev" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></symbol>
+    <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></symbol>
+    <symbol id="i-lateral" viewBox="0 0 24 24"><path d="M3 12s3-6 9-6c2 0 3.7.6 5 1.6"/><path d="M3 12s3 6 9 6c2 0 3.7-.6 5-1.6"/><ellipse cx="17" cy="12" rx="3" ry="4.5"/></symbol>
+    <symbol id="i-target" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3"/><path d="M12 1v3M12 20v3M1 12h3M20 12h3"/></symbol>
+    <symbol id="i-cube" viewBox="0 0 24 24"><path d="m12 3 8 4.5v9L12 21l-8-4.5v-9z"/><path d="m4 7.5 8 4.5 8-4.5M12 12v9"/></symbol>
+    <symbol id="i-reset" viewBox="0 0 24 24"><path d="M4 12a8 8 0 1 0 2.4-5.7"/><path d="M4 4v4h4"/></symbol>
+    <symbol id="i-play" viewBox="0 0 24 24"><path d="M7 4.5v15L19 12z"/></symbol>
+    <symbol id="i-hand" viewBox="0 0 24 24"><path d="M8 12V5.5a1.5 1.5 0 0 1 3 0V11m0-6.5a1.5 1.5 0 0 1 3 0V11m0-5a1.5 1.5 0 0 1 3 0v6m-9 0V9a1.5 1.5 0 0 0-3 0v4c0 4.5 3 8 7.5 8S20 17.5 20 13V9a1.5 1.5 0 0 0-3 0"/></symbol>
+    <symbol id="i-move" viewBox="0 0 24 24"><path d="M12 2v20M2 12h20M12 2l-3 3M12 2l3 3M12 22l-3-3M12 22l3-3M2 12l3-3M2 12l3 3M22 12l-3-3M22 12l-3 3"/></symbol>
+    <symbol id="i-pointer" viewBox="0 0 24 24"><path d="M5 3l14 8-6 1.5L10 19z" fill="currentColor"/></symbol>
+    <symbol id="i-hide" viewBox="0 0 24 24"><path d="M3 3l18 18"/><path d="M10.6 5.1A10 10 0 0 1 12 5c6.5 0 10 7 10 7a17 17 0 0 1-3 3.9M6.6 6.6C3.8 8.3 2 12 2 12s3.5 7 10 7a9.6 9.6 0 0 0 5.4-1.6"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/></symbol>
+    <symbol id="i-layers" viewBox="0 0 24 24"><path d="m12 3 9 5-9 5-9-5z"/><path d="m3 12 9 5 9-5M3 16l9 5 9-5"/></symbol>
+    <symbol id="i-close" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></symbol>
+    <symbol id="i-bulb" viewBox="0 0 24 24"><path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.2 1 2.1h5c0-.9.4-1.6 1-2.1A6 6 0 0 0 12 3z" fill="currentColor"/></symbol>
+    <symbol id="i-heart" viewBox="0 0 24 24"><path d="M12 20s-7-4.4-9-8.6C1.6 8.3 3.6 5 7 5c2 0 3.3 1.2 5 3 1.7-1.8 3-3 5-3 3.4 0 5.4 3.3 4 6.4C19 15.6 12 20 12 20z"/></symbol>
+    <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/><path d="m9 12 2 2 4-4"/></symbol>
+    <symbol id="i-book" viewBox="0 0 24 24"><path d="M4 5c3-1.5 5.5-1.5 8 0 2.5-1.5 5-1.5 8 0v14c-3-1.5-5.5-1.5-8 0-2.5-1.5-5-1.5-8 0z"/><path d="M12 5v14"/></symbol>
+    <symbol id="i-type" viewBox="0 0 24 24"><path d="M5 5h9a5 5 0 0 1 0 10H9"/><path d="M5 5v14"/><circle cx="17" cy="17" r="2"/></symbol>
+    <symbol id="i-pin" viewBox="0 0 24 24"><path d="M12 21s7-6.2 7-11.5A7 7 0 0 0 5 9.5C5 14.8 12 21 12 21z"/><circle cx="12" cy="9.5" r="2.5"/></symbol>
+    <symbol id="i-drop" viewBox="0 0 24 24"><path d="M12 3s6 6.5 6 11a6 6 0 0 1-12 0c0-4.5 6-11 6-11z"/></symbol>
+    <symbol id="i-link" viewBox="0 0 24 24"><rect x="3" y="3" width="8" height="8" rx="2"/><rect x="13" y="13" width="8" height="8" rx="2"/><path d="M11 7h4a2 2 0 0 1 2 2v4"/></symbol>
+    <symbol id="i-fn" viewBox="0 0 24 24"><path d="M12 3c3 3 3 6 0 9s-3 6 0 9"/><path d="M5 12h14"/></symbol>
+  </defs>
+</svg>
+
+<div class="app" id="app">
+  <header class="topbar glass">
     <div class="brand">
-      <div class="brand-mark">◉</div>
-      <div><strong>Eye Anatomy Explorer</strong><span>Explore • Learn • Visualize • Share</span></div>
+      <div class="logo" aria-hidden="true"><span></span></div>
+      <div><h1>Eye Anatomy Explorer</h1><p>Explore • Learn • Visualize • Share</p></div>
     </div>
-    <label class="search"><span>⌕</span><input id="searchInput" autocomplete="off" placeholder="Search for a structure…" /></label>
-    <div class="toolbar">
-      <div class="view-buttons">
-        <button data-view="anterior">◉ Anterior</button>
-        <button data-view="lateral">◈ Lateral</button>
-        <button data-view="posterior">◉ Posterior</button>
-        <button data-view="section">◇ Cross Section</button>
-      </div>
-      <button id="resetBtn">↻ Reset</button><button id="autoRotateBtn">▷ Auto Rotate</button>
-      <button id="sectionBtn">◫ Section</button><button id="layersBtn">▱ Layers</button><button id="captureBtn">▣ Capture</button><button id="shareBtn">⌯ Share</button>
-    </div>
+    <label class="search-main">
+      <svg class="ico"><use href="#i-search"/></svg>
+      <input id="searchMain" type="search" placeholder="Search for a structure..." autocomplete="off" list="structList" />
+      <datalist id="structList"></datalist>
+    </label>
+    <nav class="mainnav" aria-label="Main">
+      <button class="nav-btn active" data-nav="home"><svg class="ico"><use href="#i-home"/></svg><span>Home</span></button>
+      <button class="nav-btn" data-nav="quiz"><svg class="ico"><use href="#i-cap"/></svg><span>Quiz</span></button>
+      <button class="nav-btn" data-nav="notes"><svg class="ico"><use href="#i-note"/></svg><span>Notes</span></button>
+      <button class="nav-btn" data-nav="share"><svg class="ico"><use href="#i-share"/></svg><span>Share</span></button>
+      <button class="nav-btn" data-nav="more"><svg class="ico"><use href="#i-more"/></svg><span>More</span></button>
+    </nav>
+    <button class="mobile-toggle" id="mobileList" aria-label="Structures">☰</button>
   </header>
 
-  <main class="workspace">
-    <aside id="anatomySidebar" class="sidebar left-panel">
-      <div class="panel-head"><div><span class="eyebrow">ANATOMY</span><h2>Structures</h2></div><button class="mobile-close" data-close="anatomySidebar">×</button></div>
-      <div id="anatomyList" class="anatomy-list"></div>
-    </aside>
+  <aside class="left glass" id="leftPanel">
+    <div class="seg tabs" role="tablist">
+      <button class="active" data-list="anatomy">Anatomy</button>
+      <button data-list="systems">Systems</button>
+      <button data-list="clinical">Clinical</button>
+    </div>
+    <label class="search-side">
+      <input id="searchSide" type="search" placeholder="Search structures..." autocomplete="off" />
+      <svg class="ico"><use href="#i-search"/></svg>
+    </label>
+    <div class="struct-list" id="structListEl"></div>
+  </aside>
 
-    <section class="viewport-wrap">
-      <canvas id="scene"></canvas>
-      <div class="viewport-hud"><div class="hint" id="demoHint">Click any structure to explore.</div><div class="legend"><span><i class="dot"></i> Selectable anatomy</span><span id="modeLabel">FULL EYE</span></div></div>
-      <div class="quickviews" aria-label="Quick views">
-        <span class="quickviews-title">Quick Views</span>
-        <button class="quickview active" data-view="anterior">Full Eye</button><button class="quickview" data-view="anterior">Cornea</button><button class="quickview" data-view="lateral">Lens</button><button class="quickview" data-view="posterior">Retina</button><button class="quickview" data-view="posterior">Optic Nerve</button><button class="quickview" data-view="section">Cross Section</button>
-      </div>
-      <div class="quickbar">
-        <button><span class="quick-icon">✋</span>Rotate</button><button><span class="quick-icon">⌕</span>Zoom</button><button><span class="quick-icon">✥</span>Pan</button><button class="active"><span class="quick-icon">➤</span>Select</button><button id="isolateBtn"><span class="quick-icon">◌</span>Isolate</button><button id="showAllBtn"><span class="quick-icon">▱</span>Show All</button><button id="xrayBtn"><span class="quick-icon">◇</span>X-Ray</button>
-      </div>
-      <div id="loading" class="loading"><div class="spinner"></div><span>Building anatomy…</span></div>
-    </section>
+  <main class="stage" id="stage">
+    <canvas id="scene" aria-label="Interactive 3D eye model"></canvas>
+    <svg class="leaders" id="leaders"></svg>
+    <div class="labels" id="labels"></div>
 
-    <aside id="infoPanel" class="sidebar right-panel">
-      <div class="panel-head"><div><span class="eyebrow">SELECTED STRUCTURE</span><h2 id="infoName">Cornea</h2></div><button class="mobile-close" data-close="infoPanel">×</button></div>
-      <div id="infoContent" class="info-content"></div>
-      <div class="notes-card"><div class="card-title"><span>PERSONAL NOTES</span><button id="allNotesBtn" class="text-button">All My Notes</button></div><textarea id="noteInput" placeholder="Type your notes here…"></textarea><div class="note-actions"><button id="saveNoteBtn" class="primary">Save Note</button><button id="deleteNoteBtn" class="danger">Delete</button></div></div>
-    </aside>
+    <div class="stage-top">
+      <div class="seg views glass">
+        <button data-view="anterior"><svg class="ico"><use href="#i-eye"/></svg>Anterior</button>
+        <button data-view="lateral" class="active"><svg class="ico"><use href="#i-lateral"/></svg>Lateral</button>
+        <button data-view="posterior"><svg class="ico"><use href="#i-target"/></svg>Posterior</button>
+        <button data-view="section"><svg class="ico"><use href="#i-cube"/></svg>Cross Section</button>
+      </div>
+      <div class="stage-actions">
+        <button class="pill glass" id="resetBtn"><svg class="ico"><use href="#i-reset"/></svg>Reset</button>
+        <button class="pill glass" id="rotateBtn"><svg class="ico"><use href="#i-play"/></svg><span>Auto Rotate</span></button>
+      </div>
+    </div>
+
+    <div class="stage-bottom">
+      <div class="toolbar glass" role="toolbar">
+        <button data-tool="rotate"><svg class="ico"><use href="#i-hand"/></svg>Rotate</button>
+        <button data-tool="zoom"><svg class="ico"><use href="#i-search"/></svg>Zoom</button>
+        <button data-tool="pan"><svg class="ico"><use href="#i-move"/></svg>Pan</button>
+        <button data-tool="select" class="active"><svg class="ico"><use href="#i-pointer"/></svg>Select</button>
+        <button data-tool="hide"><svg class="ico"><use href="#i-hide"/></svg>Hide</button>
+        <button data-tool="isolate"><svg class="ico"><use href="#i-layers"/></svg>Isolate</button>
+        <button data-tool="xray"><svg class="ico"><use href="#i-cube"/></svg>X-Ray</button>
+      </div>
+      <section class="quick glass">
+        <div class="quick-head"><h2>Quick Views</h2>
+          <label class="switch"><span>Hide Labels</span><input type="checkbox" id="hideLabels" role="switch" /><i></i></label>
+        </div>
+        <div class="quick-grid" id="quickGrid"></div>
+      </section>
+    </div>
+    <div class="loading" id="loading"><div class="spinner"></div><span>Building 3D anatomy…</span></div>
   </main>
 
-  <div id="layersPanel" class="floating-panel hidden"><div class="floating-head"><div><span class="eyebrow">LAYERS</span><h3>Visibility & opacity</h3></div><button id="closeLayers">×</button></div><div id="layerList"></div></div>
-  <div id="notesPanel" class="floating-panel hidden notes-list-panel"><div class="floating-head"><div><span class="eyebrow">MY NOTES</span><h3>Saved anatomy notes</h3></div><button id="closeNotes">×</button></div><div id="savedNotesList"></div></div>
-  <div id="toast" role="status"></div>
-  <footer>Educational anatomical visualization. Not a substitute for professional medical advice.</footer>
+  <aside class="right glass" id="rightPanel">
+    <div class="info-head">
+      <div class="info-logo"><span></span></div>
+      <div class="info-title"><h2 id="infoName">Canal of Schlemm</h2><p id="infoSub">Aqueous Outflow Pathway</p></div>
+      <button class="icon-btn" id="closeInfo" aria-label="Close"><svg class="ico"><use href="#i-close"/></svg></button>
+    </div>
+    <div class="seg tabs" role="tablist">
+      <button class="active" data-tab="overview">Overview</button>
+      <button data-tab="clinical">Clinical</button>
+      <button data-tab="notes">Notes</button>
+    </div>
+    <div class="tab-body" id="tabBody"></div>
+  </aside>
+
+  <footer class="foot">
+    <p class="quote">“Better Vision<br />&nbsp;&nbsp;&nbsp;Brighter Lives”</p>
+    <ul class="badges">
+      <li><svg class="ico"><use href="#i-cube"/></svg>3D Interactive Model</li>
+      <li><svg class="ico"><use href="#i-shield"/></svg>Medical Accuracy</li>
+      <li><svg class="ico"><use href="#i-book"/></svg>Educational Use</li>
+      <li><svg class="ico"><use href="#i-share"/></svg>Share &amp; Learn</li>
+    </ul>
+    <div class="love glass"><svg class="ico"><use href="#i-heart"/></svg><span>Ophthalmology for<br />a Brighter Tomorrow</span></div>
+  </footer>
 </div>
-<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/"}}</script>
+
+<dialog id="modal" class="glass" closedby="any">
+  <div class="modal-head"><h3 id="modalTitle"></h3><button class="icon-btn" id="modalClose" aria-label="Close"><svg class="ico"><use href="#i-close"/></svg></button></div>
+  <div id="modalBody"></div>
+</dialog>
+<div id="toast" role="status"></div>
+
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/"
+} }
+</script>
 <script type="module" src="./app.js"></script>
 </body>
 </html>
