@@ -68,7 +68,7 @@ for (const [id, objs] of Object.entries(registry)) {
   }
 }
 // ---- selection highlight: pulsing see-through glow drawn on top of everything
-const HL = { uTime: { value: 0 }, uColor: { value: new THREE.Color(0x19b4ff) } };
+const HL = { uTime: { value: 0 }, uFill: { value: 1 }, uColor: { value: new THREE.Color(0x19b4ff) } };
 const hlMat = new THREE.ShaderMaterial({
   uniforms: HL,
   vertexShader: `varying vec3 vN; varying vec3 vV;
@@ -82,12 +82,12 @@ const hlMat = new THREE.ShaderMaterial({
       vN = normalize(normalMatrix * n); vV = normalize(-mv.xyz);
       gl_Position = projectionMatrix * mv;
     }`,
-  fragmentShader: `uniform vec3 uColor; uniform float uTime; varying vec3 vN; varying vec3 vV;
+  fragmentShader: `uniform vec3 uColor; uniform float uTime; uniform float uFill; varying vec3 vN; varying vec3 vV;
     void main(){
       float rim = pow(1.0 - abs(dot(normalize(vN), normalize(vV))), 1.6);
       float pulse = 0.6 + 0.4 * sin(uTime * 4.0);
       vec3 c = mix(uColor * 0.9, vec3(0.75, 0.95, 1.0), rim * 0.6);
-      gl_FragColor = vec4(c, clamp(0.22 + 0.2 * pulse + rim * (0.55 + 0.3 * pulse), 0.0, 0.92));
+      gl_FragColor = vec4(c, clamp((0.22 + 0.2 * pulse) * uFill + rim * (0.55 + 0.3 * pulse), 0.0, 0.92));
     }`,
   transparent: true, depthTest: false, depthWrite: false, blending: THREE.NormalBlending, side: THREE.DoubleSide,
 });
@@ -101,7 +101,9 @@ for (const [id, objs] of Object.entries(registry)) {
     return ov;
   });
 }
+const BIG = new Set(["vitreous", "sclera", "anteriorChamber", "posteriorChamber", "retina", "choroid", "conjunctiva"]);
 function applyHighlight() {
+  HL.uFill.value = BIG.has(state.selected) ? 0.35 : 1;
   for (const [id, list] of Object.entries(overlays)) {
     const on = id === state.selected && !state.hidden.has(id);
     list.forEach((ov) => { ov.visible = on; });
@@ -465,9 +467,9 @@ $("#quickGrid").addEventListener("click", (e) => {
 const STILL = new URLSearchParams(location.search).has("still");
 const clock = new THREE.Clock();
 controls.addEventListener("change", () => { dirty = true; });
-document.addEventListener("visibilitychange", () => { if (!document.hidden) { dirty = true; requestAnimationFrame(loop); } });
+// rAF already pauses in background tabs; just force a redraw when the tab comes back
+document.addEventListener("visibilitychange", () => { dirty = true; });
 function loop() {
-  if (document.hidden) return;
   const t = clock.getElapsedTime();
   if (tween) {
     dirty = true;
@@ -498,6 +500,8 @@ renderList();
 renderInfo();
 applyTool();
 measure();
+applyMaterials(); matsDirty = false;
+renderer.render(scene, camera); updateLabels();
 $("#loading").classList.add("done");
 loop();
 window.__eye = { scene, camera, controls, eye, select, setView, state };
