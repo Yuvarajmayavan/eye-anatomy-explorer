@@ -167,7 +167,7 @@ function updateLabels() {
     const bw = el.offsetWidth, bh = el.offsetHeight;
     let lx = ax + ox * s, ly = ay + oy * s;
     lx = Math.max(bw / 2 + 4, Math.min(w - bw / 2 - 4, lx));
-    ly = Math.max(bh / 2 + 78, Math.min(h - 310, ly));
+    ly = Math.max(bh / 2 + (h < 700 ? 50 : 78), Math.min(h - (h < 700 ? 80 : h < 900 ? 130 : 310), ly));
     for (let n = 0; n < 8; n++) {
       const hit = placed.find((r) => Math.abs(r.x - lx) < (r.w + bw) / 2 + 6 && Math.abs(r.y - ly) < (r.h + bh) / 2 + 4);
       if (!hit) break;
