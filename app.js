@@ -1,483 +1,439 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
-import { ANATOMY, CATEGORIES } from "./anatomy-data.js";
+import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
+import { buildEye, ANCHORS } from "./eye.js";
+import { ANATOMY, LIST_ORDER, SYSTEMS, CLINICAL } from "./anatomy-data.js";
 
-const canvas = document.querySelector("#scene");
-const renderer = new THREE.WebGLRenderer({canvas, antialias:true, preserveDrawingBuffer:true});
+const $ = (s, el = document) => el.querySelector(s);
+const $$ = (s, el = document) => [...el.querySelectorAll(s)];
+const store = {
+  get(k) { try { return localStorage.getItem(k); } catch { return null; } },
+  set(k, v) { try { v ? localStorage.setItem(k, v) : localStorage.removeItem(k); } catch { /* storage unavailable */ } },
+  keys() { try { return Object.keys(localStorage); } catch { return []; } },
+};
+const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+// ------------------------------------------------------------------ renderer
+const canvas = $("#scene");
+const stage = $("#stage");
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true, preserveDrawingBuffer: true });
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
-renderer.setSize(canvas.clientWidth, canvas.clientHeight, false);
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.05;
 renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.setClearColor(0x000000, 0);
 
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x081018);
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+scene.environmentIntensity = 0.75;
 
-const camera = new THREE.PerspectiveCamera(35, 1, 0.01, 100);
-camera.position.set(0, 0.25, 6.8);
-
+const camera = new THREE.PerspectiveCamera(30, 1, 0.05, 100);
 const controls = new OrbitControls(camera, canvas);
 controls.enableDamping = true;
-controls.dampingFactor = 0.065;
-controls.enablePan = true;
-controls.screenSpacePanning = true;
-controls.minDistance = 2.2;
+controls.dampingFactor = 0.07;
+controls.minDistance = 1.6;
 controls.maxDistance = 14;
-controls.target.set(0,0,0);
-controls.autoRotateSpeed = 0.65;
-controls.enableRotate = true;
+controls.autoRotateSpeed = 0.9;
 
-const raycaster = new THREE.Raycaster();
-const pointer = new THREE.Vector2();
-const eye = new THREE.Group();
+// lights: warm key, cool rim, soft fill
+const hemi = new THREE.HemisphereLight(0xcfe6ff, 0x1a0f18, 0.55);
+const key = new THREE.DirectionalLight(0xfff3e8, 2.4);
+key.position.set(4, 6, 6);
+key.castShadow = true;
+key.shadow.mapSize.set(1024, 1024);
+key.shadow.camera.left = key.shadow.camera.bottom = -4;
+key.shadow.camera.right = key.shadow.camera.top = 4;
+key.shadow.bias = -0.0005;
+const rim = new THREE.DirectionalLight(0x5fb4ff, 2.2);
+rim.position.set(-5, 3, -4);
+const fill = new THREE.PointLight(0x8fc2ff, 14, 20, 2);
+fill.position.set(5, -1, 1);
+const inner = new THREE.PointLight(0xffb070, 3, 3, 2); // lights the cut interior
+scene.add(hemi, key, rim, fill, inner);
+
+// ------------------------------------------------------------------ model
+const registry = {};
+const eye = buildEye(registry);
+eye.rotation.x = Math.PI / 2;           // optical axis -> +Z (towards viewer)
+eye.rotation.z = -0.12;
+eye.position.x = -0.35;
 scene.add(eye);
+eye.updateMatrixWorld(true);
+inner.position.copy(eye.localToWorld(new THREE.Vector3(0.3, -0.2, -0.2)));
 
-const anatomyMeshes = new Map();
-const rootGroups = new Map();
-const originalMaterials = new Map();
-let selectedId = "cornea";
-let autoRotate = false;
-let sectionMode = false;
-let demoTimer;
-let isPointerDown = false;
-
-const clipPlane = new THREE.Plane(new THREE.Vector3(-1,0,0), 0.15);
-renderer.localClippingEnabled = true;
-
-function mat(color, opts={}) {
-  return new THREE.MeshPhysicalMaterial({
-    color, roughness: opts.roughness ?? .42, metalness: opts.metalness ?? 0,
-    transparent: opts.transparent ?? false, opacity: opts.opacity ?? 1,
-    transmission: opts.transmission ?? 0, thickness: opts.thickness ?? .2,
-    side: opts.side ?? THREE.FrontSide, depthWrite: opts.depthWrite ?? true,
-    emissive: opts.emissive ?? 0x000000, emissiveIntensity: opts.emissiveIntensity ?? 0,
-    clippingPlanes: opts.clippingPlanes ?? []
-  });
-}
-function addMesh(id, geometry, material, position=[0,0,0], rotation=[0,0,0], parent=eye) {
-  const mesh = new THREE.Mesh(geometry, material);
-  mesh.position.set(...position); mesh.rotation.set(...rotation);
-  mesh.userData.anatomyId = id;
-  mesh.castShadow = true; mesh.receiveShadow = true;
-  parent.add(mesh);
-  if (!anatomyMeshes.has(id)) anatomyMeshes.set(id, []);
-  anatomyMeshes.get(id).push(mesh);
-  material.userData = material.userData || {};
-  if (material.userData.baseOpacity == null) material.userData.baseOpacity = material.opacity;
-  originalMaterials.set(mesh, material);
-  return mesh;
-}
-function group(id){ const g=new THREE.Group(); g.userData.anatomyId=id; eye.add(g); rootGroups.set(id,g); return g; }
-
-function buildEye(){
-  const scleraG = new THREE.SphereGeometry(2.35, 72, 48);
-  const scleraM = mat(ANATOMY.sclera.color,{roughness:.6});
-  addMesh("sclera",scleraG,scleraM);
-
-  // Rear shell layers: nested slightly smaller spheres, cut away in section mode.
-  addMesh("choroid",new THREE.SphereGeometry(2.16,64,40),mat(ANATOMY.choroid.color,{roughness:.5,side:THREE.BackSide,depthWrite:false}));
-  addMesh("rpe",new THREE.SphereGeometry(2.08,64,40),mat(ANATOMY.rpe.color,{roughness:.65,side:THREE.BackSide,depthWrite:false}));
-  addMesh("bruchsMembrane",new THREE.SphereGeometry(2.055,64,40),mat(ANATOMY.bruchsMembrane.color,{roughness:.7,side:THREE.BackSide,depthWrite:false}));
-  addMesh("retina",new THREE.SphereGeometry(2.02,64,40),mat(ANATOMY.retina.color,{roughness:.55,side:THREE.BackSide,depthWrite:false}));
-
-  // Cornea as a front cap: sphere scaled along Z and clipped visually by a front-facing geometry.
-  const cornea = addMesh("cornea",new THREE.SphereGeometry(1.42,64,40),mat(ANATOMY.cornea.color,{transparent:true,opacity:.34,transmission:.18,thickness:.25,roughness:.16,depthWrite:false}),[0,0,2.0]);
-  cornea.scale.set(1.35,1.35,.42);
-
-  // Conjunctival ring.
-  addMesh("conjunctiva",new THREE.TorusGeometry(1.62,.07,16,72),mat(ANATOMY.conjunctiva.color,{transparent:true,opacity:.55}),[0,0,2.13]);
-
-  // Iris and pupil disks.
-  addMesh("iris",new THREE.CircleGeometry(.82,64),mat(ANATOMY.iris.color,{roughness:.36}),[0,0,2.03],[0,0,0]);
-  addMesh("pupil",new THREE.CircleGeometry(.34,64),mat(ANATOMY.pupil.color,{roughness:.25}),[0,0,2.055]);
-  // Anterior chamber visual volume.
-  const chamber=addMesh("anteriorChamber",new THREE.SphereGeometry(1.06,48,32),mat(ANATOMY.anteriorChamber.color,{transparent:true,opacity:.08,transmission:.05,depthWrite:false}),[0,0,1.5]);
-  chamber.scale.set(1,1,.45);
-  const posterior=addMesh("posteriorChamber",new THREE.SphereGeometry(.72,48,24),mat(ANATOMY.posteriorChamber.color,{transparent:true,opacity:.07,depthWrite:false}),[0,0,1.1]);
-  posterior.scale.z=.42;
-
-  // Lens, capsule and zonules.
-  addMesh("lensCapsule",new THREE.SphereGeometry(.68,64,40),mat(ANATOMY.lensCapsule.color,{transparent:true,opacity:.16,transmission:.1,depthWrite:false}),[0,0,.75]);
-  const lens=addMesh("lens",new THREE.SphereGeometry(.62,64,40),mat(ANATOMY.lens.color,{transparent:true,opacity:.42,transmission:.2,thickness:.45,roughness:.2}),[0,0,.73]);
-  lens.scale.set(1,1,.55);
-  for(let i=0;i<12;i++){
-    const a=i*Math.PI*2/12;
-    addMesh("zonules",new THREE.CylinderGeometry(.012,.012,.62,8),mat(ANATOMY.zonules.color,{roughness:.45}),[Math.cos(a)*.83,Math.sin(a)*.83,.72],[0,0,a]);
-  }
-
-  // Ciliary body ring + muscle.
-  addMesh("ciliaryBody",new THREE.TorusGeometry(.98,.15,20,64),mat(ANATOMY.ciliaryBody.color,{roughness:.5}),[0,0,1.02]);
-  addMesh("ciliaryMuscle",new THREE.TorusGeometry(.87,.065,14,64),mat(ANATOMY.ciliaryMuscle.color,{roughness:.5}),[0,0,1.08]);
-
-  // Trabecular meshwork + Schlemm ring near limbus.
-  addMesh("trabecularMeshwork",new THREE.TorusGeometry(1.38,.055,12,72),mat(ANATOMY.trabecularMeshwork.color,{roughness:.55}),[0,0,1.9]);
-  addMesh("canalSchlemm",new THREE.TorusGeometry(1.45,.026,10,72),mat(ANATOMY.canalSchlemm.color,{roughness:.4}),[0,0,1.91]);
-
-  // Vitreous volume.
-  addMesh("vitreous",new THREE.SphereGeometry(1.86,56,40),mat(ANATOMY.vitreous.color,{transparent:true,opacity:.06,transmission:.03,depthWrite:false}),[0,0,-.1]);
-
-  // Optic nerve.
-  addMesh("opticNerve",new THREE.CylinderGeometry(.28,.43,1.45,40),mat(ANATOMY.opticNerve.color,{roughness:.6}),[0,0,-2.72],[Math.PI/2,0,0]);
-
-  // Posterior landmarks and vessels on rear-facing side.
-  const rearZ=-2.04;
-  addMesh("opticDisc",new THREE.CircleGeometry(.34,48),mat(ANATOMY.opticDisc.color,{roughness:.45}),[.42,0,rearZ],[0,Math.PI,0]);
-  addMesh("opticNerveHead",new THREE.RingGeometry(.28,.39,48),mat(ANATOMY.opticNerveHead.color,{roughness:.42}),[.42,0,rearZ-.008],[0,Math.PI,0]);
-  addMesh("macula",new THREE.CircleGeometry(.48,48),mat(ANATOMY.macula.color,{transparent:true,opacity:.72,roughness:.45}),[-.35,0,rearZ-.01],[0,Math.PI,0]);
-  addMesh("macularRegion",new THREE.RingGeometry(.47,.65,48),mat(ANATOMY.macularRegion.color,{transparent:true,opacity:.48,roughness:.45}),[-.35,0,rearZ-.012],[0,Math.PI,0]);
-  addMesh("fovea",new THREE.CircleGeometry(.15,40),mat(ANATOMY.fovea.color,{roughness:.35}),[-.35,0,rearZ-.025],[0,Math.PI,0]);
-  addMesh("fovealRegion",new THREE.RingGeometry(.14,.25,40),mat(ANATOMY.fovealRegion.color,{transparent:true,opacity:.65}),[-.35,0,rearZ-.02],[0,Math.PI,0]);
-
-  // Ora serrata as a rear torus approximation.
-  addMesh("oraSerrata",new THREE.TorusGeometry(1.82,.055,12,72),mat(ANATOMY.oraSerrata.color,{roughness:.6}),[0,0,-1.86],[0,0,0]);
-
-  // Central retinal artery and vein represented by posterior vessels.
-  addMesh("retinalArtery",new THREE.TorusGeometry(.08,.018,8,32),mat(ANATOMY.retinalArtery.color,{roughness:.35}),[.42,0,rearZ-.035],[0,Math.PI,0]);
-  addMesh("retinalVein",new THREE.TorusGeometry(.12,.022,8,32),mat(ANATOMY.retinalVein.color,{roughness:.4}),[.42,0,rearZ-.04],[0,Math.PI,0]);
-
-  // Major retinal vessels: branching curves on the posterior surface.
-  const vesselMat=mat(ANATOMY.retinalVessels.color,{roughness:.32});
-  const branchDefs=[
-    [[.42,0],[.0,.55],[-.32,.9],[-.65,1.15]],
-    [[.42,0],[-.05,-.55],[-.34,-.92],[-.6,-1.18]],
-    [[.42,0],[-.55,.18],[-.95,.35],[-1.3,.43]],
-    [[.42,0],[.58,-.18],[1.0,-.4],[1.34,-.55]]
-  ];
-  for(const pts of branchDefs){
-    const curve=new THREE.CatmullRomCurve3(pts.map(([x,y])=>new THREE.Vector3(x,y,rearZ-.05)));
-    addMesh("retinalVessels",new THREE.TubeGeometry(curve,30,.018,8,false),vesselMat);
-  }
-
-  // Extraocular muscle representation.
-  const em=group("extraocularMuscle");
-  const muscleMat=mat(ANATOMY.extraocularMuscle.color,{roughness:.65});
-  const curve=new THREE.CatmullRomCurve3([new THREE.Vector3(-.5,2.05,.1),new THREE.Vector3(-.2,2.55,.2),new THREE.Vector3(.3,2.72,.1)]);
-  const muscle=new THREE.Mesh(new THREE.TubeGeometry(curve,20,.13,14,false),muscleMat);
-  muscle.userData.anatomyId="extraocularMuscle"; muscle.castShadow=true; em.add(muscle);
-  anatomyMeshes.set("extraocularMuscle",[muscle]); originalMaterials.set(muscle,muscleMat);
-
-  // Give all material arrays a clipping plane reference.
-  for(const meshes of anatomyMeshes.values()){
-    for(const m of meshes){
-      m.material.clippingPlanes = [];
-    }
+const pickables = [];
+const base = new Map();
+for (const [id, objs] of Object.entries(registry)) {
+  for (const o of objs) {
+    pickables.push(o);
+    const m = o.material;
+    base.set(o, { opacity: m.opacity, transparent: m.transparent, depthWrite: m.depthWrite, emissive: m.emissive?.clone(), ei: m.emissiveIntensity ?? 0, visible: o.visible });
   }
 }
+const LOW_PRIORITY = new Set(["anteriorChamber", "posteriorChamber", "vitreous", "conjunctiva"]);
+const worldAnchor = (id) => eye.localToWorld((ANCHORS[id] || new THREE.Vector3()).clone());
 
-function addLights(){
-  scene.add(new THREE.HemisphereLight(0xbfe8f2,0x081018,1.35));
-  const key=new THREE.DirectionalLight(0xffffff,2.1); key.position.set(4,5,6); key.castShadow=true; scene.add(key);
-  const fill=new THREE.PointLight(0x5ec8e4,1.1,12); fill.position.set(-4,1,4); scene.add(fill);
-  const rim=new THREE.PointLight(0xb5a0ff,.65,12); rim.position.set(2,-3,-5); scene.add(rim);
-}
+// ------------------------------------------------------------------ state
+const state = { selected: "schlemm", hidden: new Set(), isolate: false, xray: false, tool: "select", view: "lateral", labels: true, tab: "overview", list: "anatomy" };
 
-function setMaterialState(mesh, opacity, visible){
-  mesh.visible=visible;
-  const m=mesh.material;
-  if(m){
-    m.transparent = opacity<.995 || m.transparent;
-    m.opacity=opacity;
-    m.depthWrite=opacity>.45;
-    m.needsUpdate=true;
-  }
-}
-
-function clearHighlight(){
-  for(const [id,meshes] of anatomyMeshes){
-    for(const m of meshes){
-      const base=originalMaterials.get(m);
-      if(base) m.material.emissive.set(0x000000), m.material.emissiveIntensity=0;
-      m.scale.lerp(new THREE.Vector3(1,1,1),.35);
-    }
-  }
-}
-function highlight(id){
-  clearHighlight();
-  for(const [other,meshes] of anatomyMeshes){
-    const isSelected=other===id;
-    for(const m of meshes){
-      const base=originalMaterials.get(m);
-      if(isSelected){
-        m.material.emissive.set(ANATOMY[id]?.color ?? 0x62d6ef);
-        m.material.emissiveIntensity=.22;
-      }else{
-        m.material.emissive.set(0x000000);
-        m.material.emissiveIntensity=0;
+function applyMaterials(t = 0) {
+  for (const [id, objs] of Object.entries(registry)) {
+    const sel = id === state.selected;
+    for (const o of objs) {
+      const b = base.get(o), m = o.material;
+      o.visible = b.visible && !state.hidden.has(id);
+      let op = b.opacity;
+      if (state.xray && !sel && ["sclera", "choroid", "retina", "rectusMuscles", "conjunctiva", "ciliaryBody", "opticNerve"].includes(id)) op = Math.min(op, 0.22);
+      if (state.isolate && !sel) op = Math.min(op, 0.06);
+      const faded = op < b.opacity - 1e-3;
+      m.transparent = b.transparent || faded;
+      m.opacity = op;
+      m.depthWrite = faded ? false : b.depthWrite;
+      if (m.emissive) {
+        if (sel) { m.emissive.set(0x2f8cff); m.emissiveIntensity = 0.35 + 0.25 * Math.sin(t * 3.2); }
+        else { m.emissive.copy(b.emissive); m.emissiveIntensity = b.ei; }
       }
     }
   }
 }
 
-function selectStructure(id, focus=true){
-  if(!ANATOMY[id] || !anatomyMeshes.has(id)) return;
-  selectedId=id;
-  highlight(id);
-  renderInfo();
-  document.querySelectorAll(".anatomy-item").forEach(b=>b.classList.toggle("active",b.dataset.id===id));
-  if(focus) focusOn(id);
-  hideDemoHint();
-}
-
-function focusOn(id){
-  const meshes=anatomyMeshes.get(id); if(!meshes?.length)return;
-  const box=new THREE.Box3();
-  meshes.forEach(m=>box.expandByObject(m));
-  const center=box.getCenter(new THREE.Vector3());
-  const size=box.getSize(new THREE.Vector3());
-  const maxDim=Math.max(size.x,size.y,size.z,.3);
-  const dist=Math.max(1.9,Math.min(7.5,maxDim*3.0));
-  const dir=new THREE.Vector3().subVectors(camera.position,controls.target).normalize();
-  if(dir.lengthSq()<.1)dir.set(0,0,1);
-  const targetPos=center.clone().add(dir.multiplyScalar(dist));
-  animateCamera(targetPos,center);
-}
-function animateCamera(pos,target,duration=450){
-  const fromP=camera.position.clone(), fromT=controls.target.clone(), start=performance.now();
-  function step(now){
-    const t=Math.min(1,(now-start)/duration), e=1-Math.pow(1-t,3);
-    camera.position.lerpVectors(fromP,pos,e); controls.target.lerpVectors(fromT,target,e);
-    if(t<1)requestAnimationFrame(step);
-  }
-  requestAnimationFrame(step);
-}
-
-function renderInfo(){
-  const a=ANATOMY[selectedId]; if(!a)return;
-  document.querySelector("#infoName").textContent=a.name;
-  document.querySelector("#infoContent").innerHTML=`
-    <div class="eyebrow">${escapeHtml(a.category)}</div>
-    <h3>FUNCTION</h3><p>${escapeHtml(a.function)}</p>
-    <h3>CLINICAL RELEVANCE</h3><p>${escapeHtml(a.clinicalRelevance)}</p>
-    <h3>RELATED STRUCTURES</h3>
-    <div class="related">${a.related.map(id=>`<button data-related="${id}">${escapeHtml(ANATOMY[id]?.name||id)}</button>`).join("")}</div>`;
-  document.querySelector("#noteInput").value=localStorage.getItem(noteKey(selectedId))||"";
-  document.querySelectorAll("[data-related]").forEach(b=>b.onclick=()=>selectStructure(b.dataset.related,true));
-}
-function noteKey(id){return "eye-explorer-note:"+id}
-function escapeHtml(s){return String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[c]))}
-
-function buildSidebar(){
-  const list=document.querySelector("#anatomyList");
-  list.innerHTML=CATEGORIES.map(([cat,ids])=>`
-    <div class="category">${cat}</div>
-    ${ids.map(id=>`<button class="anatomy-item" data-id="${id}"><span class="swatch" style="color:#${ANATOMY[id].color.toString(16).padStart(6,"0")};background:#${ANATOMY[id].color.toString(16).padStart(6,"0")}"></span>${ANATOMY[id].name}</button>`).join("")}
-  `).join("");
-  list.querySelectorAll(".anatomy-item").forEach(b=>b.onclick=()=>{selectStructure(b.dataset.id,true);closeMobilePanels()});
-}
-function buildLayers(){
-  const ids=Object.keys(ANATOMY).filter(id=>anatomyMeshes.has(id));
-  const container=document.querySelector("#layerList");
-  container.innerHTML=ids.map(id=>`
-    <div class="layer-row">
-      <div class="layer-top"><span class="layer-name">${escapeHtml(ANATOMY[id].name)}</span>
-        <div class="layer-controls">
-          <select data-state="${id}"><option value="visible">Visible</option><option value="transparent">Transparent</option><option value="hidden">Hidden</option></select>
-          <input data-opacity="${id}" type="range" min="0" max="100" value="100" />
-        </div>
-      </div>
-    </div>`).join("");
-  container.querySelectorAll("[data-state]").forEach(sel=>sel.onchange=()=>{
-    const id=sel.dataset.state, val=sel.value, range=container.querySelector(`[data-opacity="${id}"]`);
-    const opacity=val==="hidden"?0:val==="transparent"?Math.min(35,+range.value):+range.value;
-    anatomyMeshes.get(id)?.forEach(m=>setMaterialState(m,opacity/100,val!=="hidden"));
-    if(id===selectedId) highlight(id);
-  });
-  container.querySelectorAll("[data-opacity]").forEach(r=>r.oninput=()=>{
-    const id=r.dataset.opacity, sel=container.querySelector(`[data-state="${id}"]`);
-    const opacity=+r.value/100;
-    if(sel.value!=="hidden") anatomyMeshes.get(id)?.forEach(m=>setMaterialState(m,opacity,true));
-  });
-}
-
-function resetView(){
-  animateCamera(new THREE.Vector3(0,.25,6.8),new THREE.Vector3(0,0,0),500);
-  controls.reset();
-  sectionMode=false; applySection(false);
-  autoRotate=false; controls.autoRotate=false; document.querySelector("#autoRotateBtn").textContent="Auto Rotate";
-}
-function applySection(on){
-  sectionMode=on;
-  renderer.localClippingEnabled=on;
-  for(const meshes of anatomyMeshes.values()){
-    meshes.forEach(m=>{
-      const base=m.material.userData?.baseOpacity ?? m.material.opacity;
-      m.material.clippingPlanes=on?[clipPlane]:[];
-      if(on){
-        if(m.userData.anatomyId === "sclera") m.material.opacity=Math.min(base,.16);
-        else if(m.userData.anatomyId === "cornea") m.material.opacity=Math.min(base,.20);
-        else if(m.userData.anatomyId === "conjunctiva") m.material.opacity=Math.min(base,.18);
-        else if(m.userData.anatomyId === "vitreous") m.material.opacity=Math.min(base,.025);
-      } else {
-        m.material.opacity=base;
-      }
-      m.material.transparent = m.material.opacity < .995 || m.material.transparent;
-      m.material.depthWrite = m.material.opacity > .45;
-      m.material.needsUpdate=true;
-    });
-  }
-  document.querySelector("#modeLabel").textContent=on?"SECTION MODE":"FULL EYE";
-  document.querySelector("#sectionBtn").textContent=on?"Full Eye":"Section Mode";
-}
-function setView(view){
-  const positions={
-    anterior:new THREE.Vector3(0,0,7),
-    lateral:new THREE.Vector3(7,0,.5),
-    posterior:new THREE.Vector3(0,0,-7),
-    section:new THREE.Vector3(5.2,.4,4.7)
-  };
-  animateCamera(positions[view]||positions.anterior,new THREE.Vector3(0,0,0),550);
-  if(view==="section")applySection(true);
-  else if(view!=="section")applySection(false);
-}
-function isolate(){
-  anatomyMeshes.forEach((meshes,id)=>{
-    meshes.forEach(m=>setMaterialState(m,id===selectedId?1:.06,id===selectedId));
-  });
-  focusOn(selectedId);
-  toast(`Isolated ${ANATOMY[selectedId].name}. Use Layers → Visible or Reset to restore.`);
-}
-function showAll(){
-  anatomyMeshes.forEach(meshes=>meshes.forEach(m=>setMaterialState(m,originalMaterials.get(m).opacity ?? 1,true)));
-  highlight(selectedId);
-}
-
-function search(q){
-  q=q.trim().toLowerCase(); if(!q)return;
-  const id=Object.keys(ANATOMY).find(id=>ANATOMY[id].name.toLowerCase().includes(q)||id.toLowerCase().includes(q));
-  if(id)selectStructure(id,true); else toast("No matching anatomy found.");
-}
-
-function saveNote(){
-  const val=document.querySelector("#noteInput").value.trim();
-  if(val)localStorage.setItem(noteKey(selectedId),val); else localStorage.removeItem(noteKey(selectedId));
-  toast(val?"Note saved locally.":"Note cleared.");
-  renderNotes();
-}
-function deleteNote(){
-  localStorage.removeItem(noteKey(selectedId));
-  document.querySelector("#noteInput").value="";
-  toast("Note deleted.");
-  renderNotes();
-}
-function renderNotes(){
-  const el=document.querySelector("#savedNotesList");
-  const entries=Object.keys(localStorage).filter(k=>k.startsWith("eye-explorer-note:")).map(k=>({id:k.split(":")[1],text:localStorage.getItem(k)})).filter(x=>x.text);
-  el.innerHTML=entries.length?entries.map(x=>`<button class="saved-note" data-note-id="${x.id}" style="display:block;width:100%;text-align:left;border:0;background:transparent;color:#dcebf1"><strong>${escapeHtml(ANATOMY[x.id]?.name||x.id)}</strong><p>${escapeHtml(x.text)}</p></button>`).join(""):`<div class="saved-note"><p>No saved notes yet.</p></div>`;
-  el.querySelectorAll("[data-note-id]").forEach(b=>b.onclick=()=>{selectStructure(b.dataset.noteId,true);document.querySelector("#notesPanel").classList.add("hidden")});
-}
-
-function encodeState(){
-  const state={
-    structure:selectedId,
-    camera:[...camera.position.toArray()].map(n=>+n.toFixed(4)),
-    target:[...controls.target.toArray()].map(n=>+n.toFixed(4)),
-    section:sectionMode
-  };
-  const compact=btoa(unescape(encodeURIComponent(JSON.stringify(state))));
-  return `${location.origin}${location.pathname}#state=${encodeURIComponent(compact)}`;
-}
-function restoreState(){
-  const hash=location.hash.match(/#state=([^&]+)/);
-  if(!hash)return false;
-  try{
-    const state=JSON.parse(decodeURIComponent(escape(atob(decodeURIComponent(hash[1])))));
-    if(state.camera)camera.position.fromArray(state.camera);
-    if(state.target)controls.target.fromArray(state.target);
-    if(state.section)applySection(true);
-    if(state.structure)selectStructure(state.structure,false);
-    return true;
-  }catch(e){console.warn("Could not restore state",e);return false}
-}
-async function share(){
-  const url=encodeState();
-  try{await navigator.clipboard.writeText(url);toast("Shareable view link copied.");}
-  catch{prompt("Copy this shareable view link:",url)}
-  if(navigator.share){try{await navigator.share({title:"Eye Anatomy Explorer",text:`Explore ${ANATOMY[selectedId].name}`,url})}catch{}}
-}
-function capture(){
-  renderer.render(scene,camera);
-  const link=document.createElement("a");
-  link.download=`eye-anatomy-${selectedId}-${Date.now()}.png`;
-  link.href=renderer.domElement.toDataURL("image/png");
-  link.click();
-  toast("PNG capture exported.");
-}
-function toast(msg){
-  const el=document.querySelector("#toast");el.textContent=msg;el.classList.add("show");
-  clearTimeout(toast.t);toast.t=setTimeout(()=>el.classList.remove("show"),2200);
-}
-function hideDemoHint(){document.querySelector("#demoHint").style.display="none"}
-
-function pointerEvent(e){
-  const rect=canvas.getBoundingClientRect();
-  pointer.x=((e.clientX-rect.left)/rect.width)*2-1;
-  pointer.y=-((e.clientY-rect.top)/rect.height)*2+1;
-}
-function pick(e){
-  pointerEvent(e); raycaster.setFromCamera(pointer,camera);
-  const objects=[...anatomyMeshes.values()].flat();
-  const hits=raycaster.intersectObjects(objects,true);
-  if(hits.length){
-    const id=hits[0].object.userData.anatomyId;
-    if(id)selectStructure(id,true);
-  }
-}
-
-document.querySelectorAll("[data-view]").forEach(b=>b.onclick=()=>{setView(b.dataset.view);document.querySelectorAll("[data-view]").forEach(x=>x.classList.toggle("active",x===b));});
-document.querySelector("#resetBtn").onclick=resetView;
-document.querySelector("#autoRotateBtn").onclick=()=>{
-  autoRotate=!autoRotate;controls.autoRotate=autoRotate;
-  document.querySelector("#autoRotateBtn").textContent=autoRotate?"Stop Rotate":"Auto Rotate";
+// ------------------------------------------------------------------ camera presets (world space)
+const V = (x, y, z) => new THREE.Vector3(x, y, z);
+const tgt = (x, y, z) => eye.localToWorld(V(x, y, z));
+const PRESETS = {
+  lateral: () => ({ pos: V(7.5, 1.9, 3.7), target: V(0.15, -0.38, 0) }),
+  anterior: () => ({ pos: V(0.3, 0.1, 7.6), target: V(-0.35, -0.5, 0) }),
+  posterior: () => ({ pos: V(3.4, 1.6, -6.4), target: V(0, -0.5, -0.6) }),
+  section: () => ({ pos: V(7.7, 3.7, 0.5), target: V(0.1, -0.55, 0) }),
+  cornea: () => ({ pos: V(2.1, 0.7, 4.2), target: tgt(0, 1.05, 0) }),
+  lens: () => ({ pos: V(3.0, 1.9, 1.9), target: tgt(0, 0.72, 0) }),
+  retina: () => ({ pos: V(3.3, 2.4, -0.6), target: tgt(0.2, -0.6, 0.4) }),
+  nerve: () => ({ pos: V(2.2, 1.0, -5.2), target: tgt(0.6, -1.7, 0.6) }),
 };
-document.querySelector("#sectionBtn").onclick=()=>applySection(!sectionMode);
-document.querySelector("#layersBtn").onclick=()=>document.querySelector("#layersPanel").classList.toggle("hidden");
-document.querySelector("#closeLayers").onclick=()=>document.querySelector("#layersPanel").classList.add("hidden");
-document.querySelector("#captureBtn").onclick=capture;
-document.querySelector("#shareBtn").onclick=share;
-document.querySelector("#isolateBtn")?.addEventListener("click",isolate);
-document.querySelector("#showAllBtn")?.addEventListener("click",showAll);
-document.querySelector("#xrayBtn")?.addEventListener("click",()=>{
-  const x=document.querySelector("#xrayBtn");
-  const on=x.dataset.on!=="1"; x.dataset.on=on?"1":"0";
-  anatomyMeshes.forEach((meshes,id)=>meshes.forEach(m=>{
-    if(id!==selectedId){const base=m.material.userData?.baseOpacity ?? m.material.opacity; setMaterialState(m,on?Math.min(base,.12):base,true);}
-  }));
-  x.classList.toggle("active",on); toast(on?"X-Ray mode enabled.":"X-Ray mode disabled.");
-});
-document.querySelector("#saveNoteBtn").onclick=saveNote;
-document.querySelector("#deleteNoteBtn").onclick=deleteNote;
-document.querySelector("#allNotesBtn").onclick=()=>{renderNotes();document.querySelector("#notesPanel").classList.remove("hidden")};
-document.querySelector("#closeNotes").onclick=()=>document.querySelector("#notesPanel").classList.add("hidden");
-document.querySelector("#searchInput").addEventListener("keydown",e=>{if(e.key==="Enter")search(e.target.value)});
-document.querySelectorAll("[data-close]").forEach(b=>b.onclick=()=>document.querySelector("#"+b.dataset.close).classList.remove("open"));
-canvas.addEventListener("pointerdown",()=>isPointerDown=true);
-canvas.addEventListener("pointerup",e=>{if(isPointerDown)pick(e);isPointerDown=false});
-window.addEventListener("resize",resize);
+const QUICK = [["Full Eye", "lateral"], ["Cornea", "cornea"], ["Lens", "lens"], ["Retina", "retina"], ["Optic Nerve", "nerve"], ["Cross Section", "section"]];
+const FOCUS = { cornea: "cornea", lens: "lens", zonules: "lens", iris: "cornea", pupil: "cornea", anteriorChamber: "cornea", retina: "retina", macula: "retina", opticDisc: "retina", choroid: "retina", vitreous: "section", opticNerve: "nerve", schlemm: "lateral", trabecular: "lateral", ciliaryBody: "lateral", posteriorChamber: "lens" };
 
-function openMobilePanels(){
-  if(innerWidth<=780){
-    document.querySelector("#anatomySidebar").classList.add("open");
-    document.querySelector("#infoPanel").classList.add("open");
+let tween = null;
+// pull the camera back on narrow screens so the whole eye fits horizontally
+function fit(p) {
+  const k = camera.aspect < 1.1 ? Math.min(2.3, 1.1 / camera.aspect) : 1;
+  if (k > 1) p.pos = p.target.clone().add(p.pos.clone().sub(p.target).multiplyScalar(k)).add(V(0, -0.35 * (k - 1), 0));
+  return p;
+}
+function flyTo(preset, ms = 900) {
+  const p = fit(PRESETS[preset]()); if (!p) return;
+  tween = { t0: performance.now(), ms, fromP: camera.position.clone(), fromT: controls.target.clone(), toP: p.pos, toT: p.target };
+}
+function setCamera(preset) { const p = fit(PRESETS[preset]()); camera.position.copy(p.pos); controls.target.copy(p.target); controls.update(); }
+
+// ------------------------------------------------------------------ labels
+const LABEL_SET = { lateral: ["cornea", "sclera", "ciliaryBody", "zonules", "schlemm", "iris", "lens", "vitreous"], section: ["sclera", "choroid", "retina", "ciliaryBody", "zonules", "lens", "vitreous", "opticNerve"], anterior: ["cornea", "iris", "pupil", "sclera"], posterior: ["opticNerve", "retina", "sclera", "rectusMuscles"] };
+// label offset from anchor, as a fraction of the stage size
+const OFFSET = { cornea: [-.22, -.28], sclera: [.04, -.27], ciliaryBody: [.23, -.24], zonules: [.25, -.08], schlemm: [.22, .04], iris: [-.2, .2], lens: [-.03, .23], vitreous: [.22, .2], choroid: [.24, .1], retina: [.2, .18], opticNerve: [.12, .16], pupil: [-.15, .18], rectusMuscles: [.14, -.18], macula: [.2, .12], opticDisc: [.2, -.1], trabecular: [.22, -.02], anteriorChamber: [-.2, -.16], posteriorChamber: [-.18, .2], conjunctiva: [-.18, -.2] };
+const labelsEl = $("#labels"), leadersEl = $("#leaders");
+const tagEls = {};
+function tagFor(id) {
+  if (!tagEls[id]) {
+    const el = document.createElement("button");
+    el.className = "tag"; el.textContent = ANATOMY[id].name;
+    el.addEventListener("click", () => select(id, true));
+    labelsEl.append(el); tagEls[id] = el;
   }
+  return tagEls[id];
 }
-function closeMobilePanels(){
-  document.querySelector("#anatomySidebar").classList.remove("open");
-  document.querySelector("#infoPanel").classList.remove("open");
+const tmp = new THREE.Vector3();
+function updateLabels() {
+  const w = stage.clientWidth, h = stage.clientHeight;
+  const cr = canvas.getBoundingClientRect(), sr = stage.getBoundingClientRect();
+  const ids = new Set(state.labels ? (LABEL_SET[state.view] || LABEL_SET.lateral) : []);
+  if (state.labels && state.selected) ids.add(state.selected);
+  let svg = "";
+  const placed = [];
+  for (const id of Object.keys(tagEls)) if (!ids.has(id)) tagEls[id].style.opacity = 0, tagEls[id].style.pointerEvents = "none";
+  for (const id of ids) {
+    if (state.hidden.has(id)) continue;
+    tmp.copy(worldAnchor(id)).project(camera);
+    if (tmp.z > 1) continue;
+    const ax = (tmp.x * 0.5 + 0.5) * cr.width + cr.left - sr.left;
+    const ay = (-tmp.y * 0.5 + 0.5) * cr.height + cr.top - sr.top;
+    const [ox, oy] = OFFSET[id] || [.18, -.12];
+    const s = Math.min(w, h * 1.3);
+    const el = tagFor(id);
+    const hot = id === state.selected;
+    el.classList.toggle("hot", hot);
+    const bw = el.offsetWidth, bh = el.offsetHeight;
+    let lx = ax + ox * s, ly = ay + oy * s;
+    lx = Math.max(bw / 2 + 4, Math.min(w - bw / 2 - 4, lx));
+    ly = Math.max(bh / 2 + 78, Math.min(h - 310, ly));
+    for (let n = 0; n < 8; n++) {
+      const hit = placed.find((r) => Math.abs(r.x - lx) < (r.w + bw) / 2 + 6 && Math.abs(r.y - ly) < (r.h + bh) / 2 + 4);
+      if (!hit) break;
+      ly = hit.y + (ly >= hit.y ? 1 : -1) * ((hit.h + bh) / 2 + 6);
+    }
+    placed.push({ x: lx, y: ly, w: bw, h: bh });
+    el.style.transform = `translate(${lx - bw / 2}px, ${ly - bh / 2}px)`;
+    el.style.opacity = 1; el.style.pointerEvents = "auto";
+    const ex = lx + (ax < lx ? -bw / 2 : bw / 2) * (Math.abs(ax - lx) > bw / 2 ? 1 : 0);
+    const ey = Math.abs(ax - lx) > bw / 2 ? ly : ly + (ay < ly ? -bh / 2 : bh / 2);
+    const mx = ax + (ex - ax) * 0.15, my = ey;
+    svg += `<path class="${hot ? "hot" : ""}" d="M${ax.toFixed(1)},${ay.toFixed(1)} Q${mx.toFixed(1)},${my.toFixed(1)} ${ex.toFixed(1)},${ey.toFixed(1)}"/><circle class="${hot ? "hot" : ""}" cx="${ax.toFixed(1)}" cy="${ay.toFixed(1)}" r="${hot ? 6 : 3}"/>`;
+  }
+  leadersEl.innerHTML = svg;
 }
 
-function resize(){
-  const w=canvas.clientWidth,h=canvas.clientHeight;
-  if(!w||!h)return;
-  camera.aspect=w/h;camera.updateProjectionMatrix();renderer.setSize(w,h,false);renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+// ------------------------------------------------------------------ sidebar
+function listGroups() {
+  if (state.list === "systems") return Object.entries(SYSTEMS);
+  if (state.list === "clinical") return Object.entries(CLINICAL);
+  return [[null, LIST_ORDER]];
 }
-function animate(){
-  requestAnimationFrame(animate);
+function renderList() {
+  const q = $("#searchSide").value.trim().toLowerCase();
+  const html = listGroups().map(([title, ids]) => {
+    const items = ids.filter((id) => !q || ANATOMY[id].name.toLowerCase().includes(q) || ANATOMY[id].sub.toLowerCase().includes(q));
+    if (!items.length) return "";
+    return (title ? `<div class="group-title">${esc(title)}</div>` : "") + items.map((id) => {
+      const a = ANATOMY[id];
+      return `<button class="item${id === state.selected ? " active" : ""}" data-id="${id}"><span class="orb" style="--c:${a.dot}"></span><span><b>${esc(a.name)}</b><small>${esc(a.sub)}</small></span><svg class="ico"><use href="#i-chev"/></svg></button>`;
+    }).join("");
+  }).join("");
+  $("#structListEl").innerHTML = html || `<p class="group-title">No match</p>`;
+}
+$("#structListEl").addEventListener("click", (e) => {
+  const b = e.target.closest(".item"); if (!b) return;
+  select(b.dataset.id, true);
+  $("#leftPanel").classList.remove("open");
+});
+$$("[data-list]").forEach((b) => b.addEventListener("click", () => {
+  state.list = b.dataset.list;
+  $$("[data-list]").forEach((x) => x.classList.toggle("active", x === b));
+  renderList();
+}));
+$("#searchSide").addEventListener("input", renderList);
+$("#structList").innerHTML = LIST_ORDER.map((id) => `<option value="${esc(ANATOMY[id].name)}">`).join("");
+$("#searchMain").addEventListener("change", (e) => searchFor(e.target.value));
+$("#searchMain").addEventListener("keydown", (e) => { if (e.key === "Enter") searchFor(e.target.value); });
+function searchFor(v) {
+  const q = v.trim().toLowerCase(); if (!q) return;
+  const id = LIST_ORDER.find((i) => ANATOMY[i].name.toLowerCase().includes(q) || i.toLowerCase().includes(q));
+  id ? select(id, true) : toast("No matching structure");
+}
+
+// ------------------------------------------------------------------ info panel
+const FACT_ICONS = [["Type", "i-type", "type"], ["Location", "i-pin", "location"], ["Function", "i-fn", "fn"], ["Clinical Relevance", "i-drop", "clinical"]];
+function renderInfo() {
+  const a = ANATOMY[state.selected];
+  $("#infoName").textContent = a.name;
+  $("#infoSub").textContent = (Object.entries(SYSTEMS).find(([, ids]) => ids.includes(state.selected)) || [a.group])[0];
+  const related = `<li><span class="fi"><svg class="ico"><use href="#i-link"/></svg></span><div><b>Related Structures</b>${a.related.map((r) => `<button data-rel="${r}">${esc(ANATOMY[r].name)}</button>`).join(", ")}</div></li>`;
+  let html = "";
+  if (state.tab === "overview") {
+    html = `<p class="lead">${esc(a.overview)}</p>
+      <ul class="facts">${FACT_ICONS.map(([t, ic, k]) => `<li><span class="fi"><svg class="ico"><use href="#${ic}"/></svg></span><div><b>${t}</b><span>${esc(a[k])}</span></div></li>`).join("")}${related}</ul>
+      <div class="keypoint"><h4><svg class="ico"><use href="#i-bulb"/></svg>Key Point</h4><p>${esc(a.key)}</p></div>`;
+  } else if (state.tab === "clinical") {
+    html = `<p class="lead"><b>Clinical relevance:</b> ${esc(a.clinical)}.</p>
+      <ul class="facts"><li><span class="fi"><svg class="ico"><use href="#i-fn"/></svg></span><div><b>Function</b><span>${esc(a.fn)}</span></div></li>${related}</ul>
+      <div class="keypoint"><h4><svg class="ico"><use href="#i-bulb"/></svg>Clinical Pearl</h4><p>${esc(a.key)}</p></div>
+      <p style="color:var(--dim);font-size:12px;margin-top:14px">Educational content — not a substitute for professional medical advice.</p>`;
+  } else {
+    html = `<div class="notes"><textarea id="noteInput" placeholder="Write your notes on ${esc(a.name)}…">${esc(store.get("eye-note:" + state.selected) || "")}</textarea>
+      <div class="row"><button class="btn primary" id="saveNote">Save Note</button><button class="btn" id="delNote">Delete</button></div></div>`;
+  }
+  $("#tabBody").innerHTML = html;
+}
+$("#tabBody").addEventListener("click", (e) => {
+  const r = e.target.closest("[data-rel]"); if (r) return select(r.dataset.rel, true);
+  if (e.target.id === "saveNote") { store.set("eye-note:" + state.selected, $("#noteInput").value.trim()); toast("Note saved on this device"); }
+  if (e.target.id === "delNote") { store.set("eye-note:" + state.selected, ""); renderInfo(); toast("Note deleted"); }
+});
+$$("[data-tab]").forEach((b) => b.addEventListener("click", () => {
+  state.tab = b.dataset.tab;
+  $$("[data-tab]").forEach((x) => x.classList.toggle("active", x === b));
+  renderInfo();
+}));
+$("#closeInfo").addEventListener("click", () => $("#rightPanel").classList.remove("open"));
+
+// ------------------------------------------------------------------ selection
+function select(id, focus = false) {
+  if (!ANATOMY[id]) return;
+  state.selected = id;
+  renderList(); renderInfo(); writeHash();
+  $(`.item[data-id="${id}"]`)?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  if (focus && FOCUS[id]) { setView(FOCUS[id] in LABEL_SET ? FOCUS[id] : state.view, FOCUS[id]); }
+  if (innerWidth <= 1100) $("#rightPanel").classList.add("open");
+}
+const ray = new THREE.Raycaster();
+const ndc = new THREE.Vector2();
+let down = null;
+canvas.addEventListener("pointerdown", (e) => { down = { x: e.clientX, y: e.clientY }; hideHint(); stopAuto(); });
+canvas.addEventListener("pointerup", (e) => {
+  if (!down || Math.hypot(e.clientX - down.x, e.clientY - down.y) > 5 || state.tool !== "select") return;
+  const r = canvas.getBoundingClientRect();
+  ndc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+  ray.setFromCamera(ndc, camera);
+  const hits = ray.intersectObjects(pickables.filter((o) => o.visible && o.material.opacity > 0.03), false);
+  if (!hits.length) return;
+  const hit = hits.find((h) => !LOW_PRIORITY.has(h.object.userData.anatomyId)) || hits[0];
+  select(hit.object.userData.anatomyId);
+});
+
+// ------------------------------------------------------------------ views & tools
+function setView(labelView, preset = labelView) {
+  state.view = labelView;
+  $$("[data-view]").forEach((b) => b.classList.toggle("active", b.dataset.view === labelView));
+  $$(".qv").forEach((q) => q.classList.toggle("active", q.dataset.preset === preset));
+  flyTo(preset); writeHash();
+}
+$$("[data-view]").forEach((b) => b.addEventListener("click", () => setView(b.dataset.view)));
+$("#resetBtn").addEventListener("click", () => {
+  state.hidden.clear(); state.isolate = state.xray = false;
+  $$("[data-tool]").forEach((b) => b.classList.toggle("active", b.dataset.tool === "select"));
+  state.tool = "select"; applyTool(); setView("lateral"); toast("View reset");
+});
+let auto = false;
+function stopAuto() { if (auto) toggleAuto(); }
+function toggleAuto() {
+  auto = !auto; controls.autoRotate = auto;
+  $("#rotateBtn").classList.toggle("on", auto);
+  $("#rotateBtn span").textContent = auto ? "Stop Rotate" : "Auto Rotate";
+}
+$("#rotateBtn").addEventListener("click", toggleAuto);
+
+function applyTool() {
+  const t = state.tool;
+  controls.mouseButtons.LEFT = t === "pan" ? THREE.MOUSE.PAN : t === "zoom" ? THREE.MOUSE.DOLLY : THREE.MOUSE.ROTATE;
+  controls.touches.ONE = t === "pan" ? THREE.TOUCH.PAN : THREE.TOUCH.ROTATE;
+}
+$$("[data-tool]").forEach((b) => b.addEventListener("click", () => {
+  const t = b.dataset.tool;
+  if (t === "hide") { state.hidden.has(state.selected) ? state.hidden.delete(state.selected) : state.hidden.add(state.selected); b.classList.toggle("active", state.hidden.size > 0); toast(state.hidden.has(state.selected) ? `${ANATOMY[state.selected].name} hidden` : `${ANATOMY[state.selected].name} shown`); return; }
+  if (t === "isolate") { state.isolate = !state.isolate; b.classList.toggle("active", state.isolate); if (state.isolate && FOCUS[state.selected]) flyTo(FOCUS[state.selected]); return; }
+  if (t === "xray") { state.xray = !state.xray; b.classList.toggle("active", state.xray); return; }
+  state.tool = t;
+  $$("[data-tool]").forEach((x) => { if (["rotate", "zoom", "pan", "select"].includes(x.dataset.tool)) x.classList.toggle("active", x === b); });
+  applyTool();
+}));
+$("#hideLabels").addEventListener("change", (e) => {
+  state.labels = !e.target.checked;
+  labelsEl.classList.toggle("off", !state.labels); leadersEl.classList.toggle("off", !state.labels);
+});
+
+// ------------------------------------------------------------------ top nav, dialogs, share
+const modal = $("#modal");
+function openModal(title, html) { $("#modalTitle").textContent = title; $("#modalBody").innerHTML = html; modal.showModal(); }
+$("#modalClose").addEventListener("click", () => modal.close());
+modal.addEventListener("click", (e) => { if (e.target === modal) modal.close(); }); // fallback for closedby
+function quiz() {
+  const pool = LIST_ORDER.filter((i) => ANATOMY[i].fn);
+  const ans = pool[Math.floor(Math.random() * pool.length)];
+  const opts = [ans]; while (opts.length < 4) { const o = pool[Math.floor(Math.random() * pool.length)]; if (!opts.includes(o)) opts.push(o); }
+  opts.sort(() => Math.random() - 0.5);
+  openModal("Quick Quiz", `<p>Which structure has this role?<br><b>“${esc(ANATOMY[ans].fn)}”</b></p>${opts.map((o) => `<button class="quiz-opt" data-q="${o}">${esc(ANATOMY[o].name)}</button>`).join("")}<div class="row"><button class="btn primary" id="nextQ">Next question</button></div>`);
+  $("#modalBody").onclick = (e) => {
+    const b = e.target.closest("[data-q]");
+    if (b) { $$(".quiz-opt").forEach((x) => x.classList.add(x.dataset.q === ans ? "ok" : x === b ? "bad" : "")); select(ans); }
+    if (e.target.id === "nextQ") quiz();
+  };
+}
+function allNotes() {
+  const list = store.keys().filter((k) => k.startsWith("eye-note:")).map((k) => [k.slice(9), store.get(k)]).filter(([id, t]) => ANATOMY[id] && t);
+  openModal("My Notes", list.length ? `<div class="saved">${list.map(([id, t]) => `<button data-note="${id}"><b>${esc(ANATOMY[id].name)}</b><small>${esc(t)}</small></button>`).join("")}</div>` : `<p style="color:var(--muted)">No notes yet. Select a structure and open the Notes tab.</p>`);
+  $("#modalBody").onclick = (e) => { const b = e.target.closest("[data-note]"); if (b) { modal.close(); select(b.dataset.note, true); } };
+}
+async function share() {
+  writeHash();
+  const url = location.href;
+  try {
+    if (navigator.share) await navigator.share({ title: "Eye Anatomy Explorer", text: `Explore the ${ANATOMY[state.selected].name}`, url });
+    else { await navigator.clipboard.writeText(url); toast("Link copied"); }
+  } catch { /* user cancelled */ }
+}
+$$("[data-nav]").forEach((b) => b.addEventListener("click", () => {
+  const n = b.dataset.nav;
+  if (n === "quiz") quiz();
+  if (n === "notes") allNotes();
+  if (n === "share") share();
+  if (n === "more") openModal("About", `<p>Interactive, procedurally built 3D model of the human eye for ophthalmic education. Drag to rotate, scroll to zoom, click any structure for details.</p><div class="row"><button class="btn" id="capBtn">Download PNG</button></div>`), ($("#capBtn").onclick = capture);
+}));
+$("#mobileList").addEventListener("click", () => $("#leftPanel").classList.toggle("open"));
+function capture() {
+  renderer.render(scene, camera);
+  const a = document.createElement("a");
+  a.download = `eye-${state.selected}.png`; a.href = canvas.toDataURL("image/png"); a.click();
+}
+function writeHash() { history.replaceState(null, "", `#s=${state.selected}&v=${state.view}`); }
+function readHash() {
+  const p = new URLSearchParams(location.hash.slice(1));
+  if (ANATOMY[p.get("s")]) state.selected = p.get("s");
+  if (LABEL_SET[p.get("v")]) state.view = p.get("v");
+}
+let toastT;
+function toast(msg) { const t = $("#toast"); t.textContent = msg; t.classList.add("show"); clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove("show"), 2000); }
+function hideHint() { /* no-op: hint removed */ }
+
+// ------------------------------------------------------------------ resize / loop
+function resize() {
+  const w = canvas.clientWidth, h = canvas.clientHeight;
+  if (!w || !h) return;
+  renderer.setSize(w, h, false);
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+}
+new ResizeObserver(resize).observe(canvas);
+
+function thumbnails() {
+  const saveP = camera.position.clone(), saveT = controls.target.clone(), saveLabels = state.selected;
+  const off = document.createElement("canvas"); off.width = 180; off.height = 195;
+  const ctx = off.getContext("2d");
+  const html = QUICK.map(([name, preset]) => {
+    setCamera(preset);
+    applyMaterials(0);
+    renderer.render(scene, camera);
+    const cw = canvas.width, ch = canvas.height, side = Math.min(cw, ch) * 0.8;
+    ctx.fillStyle = "#07142b"; ctx.fillRect(0, 0, 180, 195);
+    ctx.drawImage(canvas, (cw - side) / 2, (ch - side * 1.08) / 2, side, side * 1.08, 0, 0, 180, 195);
+    return `<button class="qv${preset === "lateral" ? " active" : ""}" data-preset="${preset}"><span class="thumb" style="background-image:url(${off.toDataURL("image/jpeg", 0.85)})"></span>${name}</button>`;
+  }).join("");
+  $("#quickGrid").innerHTML = html;
+  camera.position.copy(saveP); controls.target.copy(saveT); controls.update();
+  state.selected = saveLabels;
+}
+$("#quickGrid").addEventListener("click", (e) => {
+  const q = e.target.closest(".qv"); if (!q) return;
+  const p = q.dataset.preset;
+  setView(p in LABEL_SET ? p : (p === "retina" || p === "nerve" ? "posterior" : "lateral"), p);
+});
+
+const STILL = new URLSearchParams(location.search).has("still");
+const clock = new THREE.Clock();
+function loop() {
+  const t = clock.getElapsedTime();
+  if (tween) {
+    const k = Math.min(1, (performance.now() - tween.t0) / tween.ms), e = 1 - Math.pow(1 - k, 3);
+    camera.position.lerpVectors(tween.fromP, tween.toP, e);
+    controls.target.lerpVectors(tween.fromT, tween.toT, e);
+    if (k >= 1) tween = null;
+  }
   controls.update();
-  renderer.render(scene,camera);
+  applyMaterials(t);
+  renderer.render(scene, camera);
+  updateLabels();
+  if (!STILL) requestAnimationFrame(loop);
 }
-buildEye();addLights();buildSidebar();buildLayers();renderInfo();renderNotes();resize();animate();
-document.querySelector("#loading").remove();
-const restored=restoreState();
-if(!restored){ setView("section"); selectStructure("canalSchlemm",false); document.querySelectorAll("[data-view]").forEach(x=>x.classList.toggle("active",x.dataset.view==="section")); }
-setTimeout(()=>{autoRotate=true;controls.autoRotate=true;setTimeout(()=>{autoRotate=false;controls.autoRotate=false},3000)},250);
+
+// ------------------------------------------------------------------ boot
+readHash();
+resize();
+thumbnails();
+setCamera(state.view);
+$$("[data-view]").forEach((b) => b.classList.toggle("active", b.dataset.view === state.view));
+renderList();
+renderInfo();
+applyTool();
+$("#loading").classList.add("done");
+loop();
+window.__eye = { scene, camera, controls, eye, select, setView, state };
