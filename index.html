@@ -1,131 +1,116 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
-  <meta name="description" content="Interactive 3D human eye anatomy explorer for medical education." />
-  <title>Eye Anatomy Explorer</title>
-  <link rel="stylesheet" href="./style.css" />
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<title>3D Human Eye Anatomy Explorer</title>
+<link rel="stylesheet" href="style.css" />
 </head>
 <body>
-  <div id="app">
-    <header class="topbar">
-      <div class="brand">
-        <div class="brand-mark">◉</div>
-        <div>
-          <strong>Eye Anatomy Explorer</strong>
-          <span>Interactive medical visualization</span>
-        </div>
-      </div>
-      <div class="toolbar">
-        <label class="search">
-          <span>⌕</span>
-          <input id="searchInput" autocomplete="off" placeholder="Search anatomy…" />
-        </label>
-        <div class="view-buttons">
-          <button data-view="anterior">Anterior</button>
-          <button data-view="lateral">Lateral</button>
-          <button data-view="posterior">Posterior</button>
-          <button data-view="section">Cross Section</button>
-        </div>
-        <button id="resetBtn">Reset</button>
-        <button id="autoRotateBtn">Auto Rotate</button>
-        <button id="sectionBtn">Section Mode</button>
-        <button id="layersBtn">Layers</button>
-        <button id="captureBtn">Capture</button>
-        <button id="shareBtn">Share</button>
-      </div>
-    </header>
 
-    <main class="workspace">
-      <aside id="anatomySidebar" class="sidebar left-panel">
-        <div class="panel-head">
-          <div>
-            <span class="eyebrow">ANATOMY</span>
-            <h2>Structures</h2>
-          </div>
-          <button class="mobile-close" data-close="anatomySidebar">×</button>
-        </div>
-        <div id="anatomyList" class="anatomy-list"></div>
-      </aside>
+<div id="app">
 
-      <section class="viewport-wrap">
-        <canvas id="scene"></canvas>
-        <div class="viewport-hud">
-          <div class="hint" id="demoHint">Click any structure to explore.</div>
-          <div class="legend">
-            <span><i class="dot"></i> Selectable anatomy</span>
-            <span id="modeLabel">FULL EYE</span>
-          </div>
-        </div>
-        <div id="loading" class="loading">
-          <div class="spinner"></div>
-          <span>Building anatomy…</span>
-        </div>
-      </section>
+  <!-- ===================== TOOLBAR ===================== -->
+  <div class="toolbar">
+    <div class="brand"><span class="dot"></span><span>Eye Explorer</span></div>
 
-      <aside id="infoPanel" class="sidebar right-panel">
-        <div class="panel-head">
-          <div>
-            <span class="eyebrow">SELECTED STRUCTURE</span>
-            <h2 id="infoName">Cornea</h2>
-          </div>
-          <button class="mobile-close" data-close="infoPanel">×</button>
-        </div>
-
-        <div id="infoContent" class="info-content"></div>
-
-        <div class="notes-card">
-          <div class="card-title">
-            <span>PERSONAL NOTES</span>
-            <button id="allNotesBtn" class="text-button">All My Notes</button>
-          </div>
-          <textarea id="noteInput" placeholder="Type your notes here…"></textarea>
-          <div class="note-actions">
-            <button id="saveNoteBtn" class="primary">Save Note</button>
-            <button id="deleteNoteBtn" class="danger">Delete</button>
-          </div>
-        </div>
-      </aside>
-    </main>
-
-    <div id="layersPanel" class="floating-panel hidden">
-      <div class="floating-head">
-        <div>
-          <span class="eyebrow">LAYERS</span>
-          <h3>Visibility & opacity</h3>
-        </div>
-        <button id="closeLayers">×</button>
-      </div>
-      <div id="layerList"></div>
+    <div class="search-wrap">
+      <span class="icon">&#128269;</span>
+      <input id="searchInput" type="text" placeholder="Search anatomy…" autocomplete="off" />
+      <div id="searchResults" class="search-results"></div>
     </div>
 
-    <div id="notesPanel" class="floating-panel hidden notes-list-panel">
-      <div class="floating-head">
-        <div>
-          <span class="eyebrow">MY NOTES</span>
-          <h3>Saved anatomy notes</h3>
-        </div>
-        <button id="closeNotes">×</button>
-      </div>
-      <div id="savedNotesList"></div>
+    <div class="toolbar-group hide-tablet" id="viewGroup">
+      <button class="tbtn" data-view="anterior">Anterior</button>
+      <button class="tbtn" data-view="lateral">Lateral</button>
+      <button class="tbtn" data-view="superior">Superior</button>
+      <button class="tbtn" data-view="posterior">Posterior</button>
+      <button class="tbtn" data-view="cross">Cross Section</button>
+      <button class="tbtn active" data-view="full">Full Eye</button>
     </div>
 
-    <div id="toast" role="status"></div>
+    <div class="toolbar-group">
+      <button class="tbtn icon-only" id="resetBtn" title="Reset view"><span class="glyph">&#8635;</span></button>
+      <button class="tbtn icon-only" id="autoRotateBtn" title="Auto rotate"><span class="glyph">&#9696;</span></button>
+    </div>
 
-    <footer>
-      Educational anatomical visualization. Not a substitute for professional medical advice.
-    </footer>
+    <div class="toolbar-spacer"></div>
+
+    <div class="toolbar-group">
+      <button class="tbtn" id="sectionModeBtn"><span class="glyph">&#9681;</span> Section</button>
+      <button class="tbtn" id="layersBtn"><span class="glyph">&#9776;</span> Layers</button>
+      <button class="tbtn" id="isolateBtn"><span class="glyph">&#9678;</span> Isolate</button>
+    </div>
+
+    <div class="toolbar-group">
+      <button class="tbtn icon-only" id="captureBtn" title="Capture view"><span class="glyph">&#128247;</span></button>
+      <button class="tbtn icon-only" id="shareBtn" title="Share view"><span class="glyph">&#128279;</span></button>
+    </div>
   </div>
 
-  <script type="importmap">
-    {
-      "imports": {
-        "three": "https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js",
-        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/"
-      }
-    }
-  </script>
-  <script type="module" src="./app.js"></script>
+  <!-- ===================== BODY ===================== -->
+  <div class="app-body">
+
+    <!-- LEFT: anatomy navigation -->
+    <nav class="sidebar" id="sidebar">
+      <div class="sheet-handle"></div>
+      <div id="sidebarContent"></div>
+    </nav>
+
+    <!-- CENTER: 3D viewport -->
+    <div class="viewport" id="viewport">
+      <div class="disclaimer">Educational anatomical visualization. Not a substitute for professional medical advice.</div>
+      <div class="axis-hint" id="axisHint">Drag to rotate · Scroll to zoom<br/>Right-drag to pan</div>
+      <div class="viewport-tooltip" id="demoTooltip">Click any structure to explore.</div>
+
+      <!-- Section mode float panel -->
+      <div class="float-panel" id="sectionPanel">
+        <h3>Section Mode <button class="close" data-close="sectionPanel">&times;</button></h3>
+        <label class="radio-row"><input type="radio" name="section" value="full" checked /> Full Eye</label>
+        <label class="radio-row"><input type="radio" name="section" value="anterior" /> Anterior Section</label>
+        <label class="radio-row"><input type="radio" name="section" value="posterior" /> Posterior Section</label>
+        <label class="radio-row"><input type="radio" name="section" value="cross" /> Cross Section</label>
+      </div>
+
+      <!-- Layers float panel -->
+      <div class="float-panel" id="layersPanel">
+        <h3>Layers <button class="close" data-close="layersPanel">&times;</button></h3>
+        <div id="layersContent"></div>
+      </div>
+
+      <div class="mobile-fabs">
+        <button class="fab" id="fabAnatomy">&#128220; Anatomy</button>
+        <button class="fab" id="fabInfo">&#8505; Info</button>
+      </div>
+    </div>
+
+    <!-- RIGHT: info / notes -->
+    <aside class="info-panel" id="infoPanel">
+      <div class="sheet-handle"></div>
+      <div id="infoContent">
+        <div class="info-empty">Select a structure from the model or the anatomy list to see its details here.</div>
+      </div>
+      <button class="all-notes-link" id="allNotesBtn">View all my notes &rarr;</button>
+    </aside>
+
+  </div>
+</div>
+
+<div class="sheet-backdrop" id="sheetBackdrop"></div>
+
+<!-- All-notes modal -->
+<div class="modal-overlay" id="notesModal">
+  <div class="modal">
+    <h2>All My Notes <button id="closeNotesModal">&times;</button></h2>
+    <div id="notesModalContent"></div>
+  </div>
+</div>
+
+<!-- ===================== LIBRARIES (UMD / global-script, no build step) ===================== -->
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+
+<script src="anatomy-data.js"></script>
+<script src="app.js"></script>
 </body>
 </html>
