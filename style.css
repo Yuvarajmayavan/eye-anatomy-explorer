@@ -42,6 +42,7 @@ button { cursor: pointer; background: none; border: 0; }
 /* ---------- layout ---------- */
 .app {
   height: 100dvh;
+  overflow: clip;
   display: grid;
   grid-template-columns: 290px minmax(0, 1fr) 290px;
   grid-template-rows: 88px minmax(0, 1fr) 84px;
@@ -197,7 +198,7 @@ dialog::backdrop { background: rgba(2, 6, 16, .6); -webkit-backdrop-filter: blur
 .quiz-opt { display: block; width: 100%; text-align: left; padding: 11px 14px; margin: 8px 0; border-radius: 10px; border: 1px solid var(--line); background: rgba(20, 45, 85, .5); }
 .quiz-opt.ok { border-color: #3ddc97; background: rgba(40, 180, 120, .25); }
 .quiz-opt.bad { border-color: #ff6b7a; background: rgba(220, 60, 80, .22); }
-#toast { position: fixed; left: 50%; bottom: 28px; translate: -50% 20px; opacity: 0; padding: 10px 16px; border-radius: 12px; background: rgba(20, 60, 120, .9); border: 1px solid rgba(100, 180, 255, .4); font-size: 14px; transition: opacity .25s, translate .25s; pointer-events: none; z-index: 50; }
+#toast { position: fixed; left: 50%; top: 96px; translate: -50% 20px; opacity: 0; padding: 10px 16px; border-radius: 12px; background: rgba(20, 60, 120, .9); border: 1px solid rgba(100, 180, 255, .4); font-size: 14px; transition: opacity .25s, translate .25s; pointer-events: none; z-index: 50; }
 #toast.show { opacity: 1; translate: -50% 0; }
 
 :focus-visible { outline: 2px solid var(--accent-2); outline-offset: 2px; }
@@ -249,6 +250,15 @@ dialog::backdrop { background: rgba(2, 6, 16, .6); -webkit-backdrop-filter: blur
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
 
 /* ---------- short screens (laptops with browser bars) ---------- */
+@media (max-height: 1000px) and (min-width: 761px) {
+  .stage-bottom { flex-direction: row; justify-content: center; align-items: flex-end; gap: 10px; }
+  .quick { width: auto; }
+  .quick-grid { grid-template-columns: repeat(6, 46px); gap: 6px; }
+  .quick-head h2 { font-size: 14px; }
+  .switch span { display: none; }
+  .toolbar button { width: 54px; height: 58px; font-size: 12px; }
+  .qv { font-size: 10px; }
+}
 @media (max-height: 820px) and (min-width: 761px) {
   .app { grid-template-rows: 72px minmax(0, 1fr) 0; gap: 10px; }
   .foot { display: none; }
@@ -274,4 +284,27 @@ dialog::backdrop { background: rgba(2, 6, 16, .6); -webkit-backdrop-filter: blur
   .quick { display: none; }
   .item { padding: 5px 8px; }
   .orb { width: 26px; height: 26px; }
+}
+
+/* ---------- mobile bottom sheet + touch polish ---------- */
+@media (max-width: 760px) {
+  body { overscroll-behavior: none; }
+  #scene { inset: 0; width: 100%; height: 100%; }
+  .stage { overflow: clip; }
+  .right { padding: 10px 14px; border-radius: 20px 20px 0 0; bottom: 0; left: 0; right: 0; transition: translate .32s cubic-bezier(.2,.8,.2,1), max-height .32s; }
+  .right::before { content: ""; display: block; width: 44px; height: 5px; border-radius: 3px; background: rgba(255,255,255,.35); margin: 0 auto 8px; }
+  .right.open:not(.expanded) { max-height: 96px; overflow: hidden; }
+  .right.open.expanded { max-height: 70dvh; overflow: auto; }
+  .right .info-head { margin-bottom: 10px; cursor: pointer; }
+  .right .info-logo { width: 40px; height: 40px; }
+  .right.open:not(.expanded) .info-title p::after { content: " · tap for details"; color: var(--accent-2); }
+  .stage-bottom { bottom: 104px; }
+  .app:has(.right:not(.open)) .stage-bottom { bottom: 8px; }
+  .quick { display: none; }
+  .right { margin: 0; }
+  .toolbar { width: 100%; justify-content: space-between; }
+  .toolbar button { flex: 1; min-width: 44px; }
+  button, .item, .tag { -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
+  .item { min-height: 48px; }
+  #toast { top: 76px; }
 }
